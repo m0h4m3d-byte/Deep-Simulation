@@ -24,6 +24,31 @@ AUTONOMOUS_ON = os.environ.get("KAGG_AUTONOMOUS", "1") == "1"
 class AutonomousBrain:
     """Stateless evaluator — call choose_* each turn with the live obs."""
 
+    def __init__(self):
+        from src.brain.allocator import UnifiedAllocator
+        self.allocator = UnifiedAllocator()
+
+    def apply(self, obs):
+        """Called once per turn from main.py when AUTONOMOUS_ON.
+        Re-weights PLAN in place based on unified resource scoring."""
+        if not AUTONOMOUS_ON:
+            return
+        try:
+            scores = self.allocator.score(obs)
+            import src.economy as E
+            # If sheep clearly beats cow, tilt the herd 2 pens toward sheep
+            if scores.get("sheep", -1e9) > scores.get("cow", -1e9) * 1.3:
+                # Sheep is >30% better per hand-day → shift 2 pens
+                if E.PLAN["SHEEP"] < 8:
+                    E.PLAN["SHEEP"] = min(8, E.PLAN["SHEEP"] + 1)
+                    E.PLAN["COW"] = max(10, E.PLAN["COW"] - 1)
+            # If wheat beats strawberry per hand-day, we already have WHEAT 30
+            # as default; no further shift needed (strawberry 45 stays).
+        except Exception:
+            pass
+
+    # --- crops -------------------------------------------------------
+
     # --- crops -------------------------------------------------------
     def choose_crop_order(self, obs) -> list[str]:
         """Best-first crop names — dynamic profit via MarketModel.
