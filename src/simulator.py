@@ -237,6 +237,45 @@ def parity_check(seeds, opponent="pass", verbose=True):
 
 
 # ----------------------------------------------------------------------
+# what_if: evaluate an alternative decision at a given turn.
+# ----------------------------------------------------------------------
+
+def what_if(seed, agent_factory, alt_step, alt_market_orders, opponent="pass"):
+    """Run two episodes from the same seed: baseline vs one-turn alternative.
+
+    At turn `alt_step` the baseline agent's market orders are replaced by
+    `alt_market_orders` (e.g. hold vs sell). Both episodes then continue
+    normally to day 30. Returns (baseline_money, alt_money, delta).
+    """
+    from main import Agent as _ProdAgent  # noqa: F401
+    factory = agent_factory or (lambda: _ProdAgent())
+
+    def run_with_alt(inject=False):
+        sim = Simulator(seed=seed)
+        sim.reset()
+        views = sim.step(None)
+        agent = factory()
+        step = 0
+        while not sim.done:
+            a = agent(views[0])
+            if inject and step == alt_step:
+                a = dict(a)
+                a["market"] = list(alt_market_orders)
+            opp_a = _OPPONENTS.get(opponent, opponent)
+            if callable(opp_a):
+                opp_act = opp_a(views[1]) if isinstance(views[1], dict) else {"farmer": ["PASS"], "hands": [], "market": []}
+            else:
+                opp_act = {"farmer": ["PASS"], "hands": [], "market": []}
+            views = sim.step([a, opp_act])
+            step += 1
+        return float(sim.state[0].observation.farms[0]["money"])
+
+    base = run_with_alt(False)
+    alt = run_with_alt(True)
+    return base, alt, alt - base
+
+
+# ----------------------------------------------------------------------
 # Benchmark our production agent
 # ----------------------------------------------------------------------
 
