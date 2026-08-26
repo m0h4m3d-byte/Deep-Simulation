@@ -23,10 +23,13 @@ class LadderSeason:
         pool: OpponentPool | None = None,
         seed: int = 0,
         opponent_name: str = "us",
+        strong_only: bool = True,
     ):
         self.agent_factory = agent_factory
         self.episodes = episodes
-        self.pool = pool or OpponentPool()
+        _pool = pool or OpponentPool()
+        # Default to the STRONG bench — the full pool is 100% winrate and meaningless.
+        self.pool = _pool.strong() if strong_only else list(_pool)
         self.seed = seed
         self.opponent_name = opponent_name
         self.ratings = EloRating()
