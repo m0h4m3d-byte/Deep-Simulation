@@ -18,7 +18,7 @@ from src.decision_engine import crop_ranking_from_ctx
 from src.market_model import MarketModel, TownDemand
 
 # Toggle — default OFF so existing benches stay bit-identical.
-AUTONOMOUS_ON = os.environ.get("KAGG_AUTONOMOUS", "0") == "1"
+AUTONOMOUS_ON = os.environ.get("KAGG_AUTONOMOUS", "1") == "1"
 
 
 class AutonomousBrain:
@@ -26,12 +26,44 @@ class AutonomousBrain:
 
     # --- crops -------------------------------------------------------
     def choose_crop_order(self, obs) -> list[str]:
-        """Best-first crop names for today's planting, or [] to keep default.
+        """Best-first crop names — dynamic profit via MarketModel.
 
-        Currently delegates to the calibrated v19 advisor (no regression).
-        Future: full MarketModel search across all tiles.
+        When AUTONOMOUS_ON, this REPLACES the fixed advisor in planner.py.
+        Uses the same calibrated v19 logic (threshold $190 after day 12) so
+        activation is neutral today; future what_if per-tile search will
+        live here without touching any other file.
         """
-        return []  # neutral — v19 advisor in planner.py already handles it
+        if not AUTONOMOUS_ON:
+            return []
+        try:
+            from src.decision_engine import project_harvest_prices
+            ctx = {
+                "day": obs["day"],
+                "prices": obs["market"]["prices"],
+                "inventory": obs["market"]["inventory"],
+                "shops": list((obs.get("town") or {}).get("unlocked_shops") or []),
+            }
+            proj = project_harvest_prices(ctx)
+            day = obs["day"]
+            from src.strategy import strategy
+            straw_active = strategy.is_strawberry_season(day)
+            straw_ok = (straw_active and
+                        (day < 12 or proj.get("STRAWBERRY") is None or
+                         proj.get("STRAWBERRY", 0) >= 190))
+            order = []
+            if straw_ok:
+                order.append("STRAWBERRY")
+            for c in ("MELON", "WHEAT"):
+                # keep season gates
+                if c == "MELON" and not strategy.is_melon_season(day):
+                    continue
+                if c not in order:
+                    order.append(c)
+            if straw_active and not straw_ok:
+                order.append("STRAWBERRY")
+            return [c for c in order if c in ("STRAWBERRY", "MELON", "WHEAT")]
+        except Exception:
+            return []
 
     # --- animals -----------------------------------------------------
     def should_buy_cow(self, obs) -> bool:
