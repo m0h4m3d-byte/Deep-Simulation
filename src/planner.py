@@ -63,6 +63,8 @@ from src.strategy import strategy
 # ON by default (30-seed: $86.3k vs $85.5k, worst seed +$18.7k).
 # KAGG_CROP_ADVISOR=0 restores the fixed STRAWBERRY->MELON->WHEAT
 # priority (bit-identical pre-Phase-13 behavior).
+# Phase 20: AutonomousBrain — when KAGG_AUTONOMOUS=1 the brain decides
+# crop order directly via MarketModel; the toggle above is superseded.
 # ============================================================
 CROP_ADVISOR_ON = os.environ.get("KAGG_CROP_ADVISOR", "1") == "1"
 
@@ -81,6 +83,18 @@ def _advisor_crop_order(day, market_ctx):
     world reads ~$160-170 then. Demotion is evaluated daily from day 10 on,
     inside the strawberry planting window (starts day 8, melon ends day 13).
     """
+    # Autonomous brain supersedes the calibrated advisor when enabled.
+    try:
+        from src.autonomous import AUTONOMOUS_ON, AutonomousBrain
+        if AUTONOMOUS_ON:
+            brain = AutonomousBrain()
+            order = brain.choose_crop_order({"day": day, "market": {"prices": market_ctx.get("prices", {}),
+                                                                     "inventory": market_ctx.get("inventory", {})},
+                                             "town": {"unlocked_shops": market_ctx.get("shops", [])}})
+            if order:
+                return [c for c in order if c in DEFAULT_CROP_ORDER]
+    except Exception:
+        pass
     try:
         from src.decision_engine import project_harvest_prices
         proj = project_harvest_prices(market_ctx)
