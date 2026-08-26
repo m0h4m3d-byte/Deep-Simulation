@@ -1,0 +1,16 @@
+# brain.yaml — كل الأرقام هنا، لا أرقام محفورة في الكود
+version: 1
+plan:
+  COW: 15
+  SHEEP: 3
+  WHEAT: 30
+  STRAWBERRY: 45
+thresholds:
+  milk_crash: 120
+  straw_lead: 190
+  trend_drop: 0.75
+enabled:
+  - spatial      # محايد حالياً — يُفعل منطقه لاحقاً
+  - profit
+  - hands
+  - fertilizer
