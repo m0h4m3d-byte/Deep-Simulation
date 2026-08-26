@@ -282,18 +282,6 @@ class FarmPlanner:
         plant_count = sum(1 for row in tiles for t in row
                           if isinstance(t, dict) and t.get("kind") == "PLANT")
         plant_target = strategy.plant_target(day)
-        # Phase 4 verdict: center-outward plant emission (distance-sorted)
-        # was benchmarked and REVERTED - it flipped the crop mix to melon
-        # (peak plants 59.0 -> 53.8, avg $72,722 -> $71,767). baseline's row-major
-        # emission + nearest-tie dispatch is the empirically best order;
-        # the pasture cap fix (28 -> ordered+2) is kept separately.
-        # Phase 6.4 verdict: center-out emission was gauged AGAIN (user
-        # requested "use the center ring first") and REPRODUCED Phase 4's
-        # loss exactly: avg $72,018 vs $81,607, strawberry plantings
-        # 183 -> 60, day-15 cash $323, peak plants 55.1. Near-first put
-        # day-0-13 melons on the best tiles and froze strawberry's field.
-        # baseline row-major stays - the shed-adjacent ring belongs to the
-        # fixed pasture positions already (the hierarchy IS implemented).
         for y in range(10):
             for x in range(10):
                 if (x, y) in shed_tiles or tiles[y][x] == "LOCKED":
@@ -301,24 +289,22 @@ class FarmPlanner:
                 if tiles[y][x] is None:
                     if plant_count >= plant_target:
                         break
-                    # Strawberry is the premium ongoing crop; let melon only fill
-                    # an early cash-burst quota so it does not starve strawberry.
                     for crop in crop_order:
-                        if not active.get(crop) or seeds.get(crop, 0) <= 0:
-                            continue
-                        if crop == "MELON" and melon_on_field >= melon_cap:
-                            continue
-                        # Maturity Tracker: skip crops whose first yield lands
-                        # after the last playable day (day 29) - e.g. wheat
-                        # planted on day 28 or strawberry planted after day 19
-                        # can never be harvested, wasting seeds, tiles and labor.
-                        if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
-                            continue
-                        jobs.append(((x, y), "PLANT", 2, crop))
-                        plant_count += 1
-                        if crop == "MELON":
-                            melon_on_field += 1
-                        break
+                            if not active.get(crop) or seeds.get(crop, 0) <= 0:
+                                continue
+                            if crop == "MELON" and melon_on_field >= melon_cap:
+                                continue
+                            # Maturity Tracker: skip crops whose first yield lands
+                            # after the last playable day (day 29) - e.g. wheat
+                            # planted on day 28 or strawberry planted after day 19
+                            # can never be harvested, wasting seeds, tiles and labor.
+                            if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
+                                continue
+                            jobs.append(((x, y), "PLANT", 2, crop))
+                            plant_count += 1
+                            if crop == "MELON":
+                                melon_on_field += 1
+                            break
 
         for u_idx, inv in enumerate(invs):
             depositable = [k for k, v in inv.items() if v > 0 and k not in ("WHEAT", "COW", "SHEEP", "GOOSE")]
