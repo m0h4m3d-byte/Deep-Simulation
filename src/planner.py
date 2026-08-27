@@ -63,8 +63,6 @@ from src.strategy import strategy
 # ON by default (30-seed: $86.3k vs $85.5k, worst seed +$18.7k).
 # KAGG_CROP_ADVISOR=0 restores the fixed STRAWBERRY->MELON->WHEAT
 # priority (bit-identical pre-Phase-13 behavior).
-# Phase 20: AutonomousBrain — when KAGG_AUTONOMOUS=1 the brain decides
-# crop order directly via MarketModel; the toggle above is superseded.
 # ============================================================
 CROP_ADVISOR_ON = os.environ.get("KAGG_CROP_ADVISOR", "1") == "1"
 
@@ -83,18 +81,6 @@ def _advisor_crop_order(day, market_ctx):
     world reads ~$160-170 then. Demotion is evaluated daily from day 10 on,
     inside the strawberry planting window (starts day 8, melon ends day 13).
     """
-    # Autonomous brain supersedes the calibrated advisor when enabled.
-    try:
-        from src.autonomous import AUTONOMOUS_ON, AutonomousBrain
-        if AUTONOMOUS_ON:
-            brain = AutonomousBrain()
-            order = brain.choose_crop_order({"day": day, "market": {"prices": market_ctx.get("prices", {}),
-                                                                     "inventory": market_ctx.get("inventory", {})},
-                                             "town": {"unlocked_shops": market_ctx.get("shops", [])}})
-            if order:
-                return [c for c in order if c in DEFAULT_CROP_ORDER]
-    except Exception:
-        pass
     try:
         from src.decision_engine import project_harvest_prices
         proj = project_harvest_prices(market_ctx)
@@ -290,21 +276,21 @@ class FarmPlanner:
                     if plant_count >= plant_target:
                         break
                     for crop in crop_order:
-                            if not active.get(crop) or seeds.get(crop, 0) <= 0:
-                                continue
-                            if crop == "MELON" and melon_on_field >= melon_cap:
-                                continue
-                            # Maturity Tracker: skip crops whose first yield lands
-                            # after the last playable day (day 29) - e.g. wheat
-                            # planted on day 28 or strawberry planted after day 19
-                            # can never be harvested, wasting seeds, tiles and labor.
-                            if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
-                                continue
-                            jobs.append(((x, y), "PLANT", 2, crop))
-                            plant_count += 1
-                            if crop == "MELON":
-                                melon_on_field += 1
-                            break
+                        if not active.get(crop) or seeds.get(crop, 0) <= 0:
+                            continue
+                        if crop == "MELON" and melon_on_field >= melon_cap:
+                            continue
+                        # Maturity Tracker: skip crops whose first yield lands
+                        # after the last playable day (day 29) - e.g. wheat
+                        # planted on day 28 or strawberry planted after day 19
+                        # can never be harvested, wasting seeds, tiles and labor.
+                        if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
+                            continue
+                        jobs.append(((x, y), "PLANT", 2, crop))
+                        plant_count += 1
+                        if crop == "MELON":
+                            melon_on_field += 1
+                        break
 
         for u_idx, inv in enumerate(invs):
             depositable = [k for k, v in inv.items() if v > 0 and k not in ("WHEAT", "COW", "SHEEP", "GOOSE")]

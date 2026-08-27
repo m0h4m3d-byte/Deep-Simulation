@@ -18,9 +18,6 @@ bundled with its src/ package (see docs/AGENTS.md).
 
 from src.economy import MarketEngine
 from src.planner import FarmPlanner
-from src.autonomous import AutonomousBrain
-
-_brain = AutonomousBrain()
 
 
 class Agent:
@@ -87,15 +84,6 @@ class Agent:
         jobs = self.planner.collect_jobs(day, tiles, shed, seeds, invs,
                                          self.market.animals_ordered,
                                          market_ctx=market_ctx)
-        # Autonomous hands: hire extra when watering is bottleneck
-        try:
-            pending_water = sum(1 for j in jobs if j[1] == "WATER")
-            extra = _brain.extra_hands_needed(obs, pending_water, len(units) - 1)
-            for _ in range(extra):
-                if len(orders) < 10:
-                    orders.append(["HIRE"])
-        except Exception:
-            pass
         actions = []
         used_jobs = set()
         for u_idx, pos in enumerate(units):
