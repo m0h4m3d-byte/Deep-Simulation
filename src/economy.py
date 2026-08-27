@@ -398,6 +398,7 @@ class MarketEngine:
         self.wool_season_max = None
         self.milk_peak = 0.0
         self.milk_crash_active = False
+        self.milk_history: list[float] = []
 
     def _on_day(self, day: int):
         """Roll over day-trackers; a fresh game looks like a day reset."""
@@ -550,12 +551,28 @@ class MarketEngine:
             if day >= 3:
                 if milk_now > self.milk_peak:
                     self.milk_peak = milk_now
+            # Early indicator: rate of change over last 3-4 days (not absolute value)
+            self.milk_history.append(float(milk_now))
+            if len(self.milk_history) > 4:
+                self.milk_history.pop(0)
+            early_slowdown = False
+            if len(self.milk_history) >= 3 and day >= ANIMAL_ADVISOR_MIN_DAY:
+                d1 = self.milk_history[-1] - self.milk_history[-2]
+                d2 = self.milk_history[-2] - self.milk_history[-3]
+                # Only fire early if price is already softening below $150 —
+                # avoids false positives when price is $180+ and dips slightly
+                # but will recover (healthy worlds).
+                if milk_now < 150:
+                    if d2 > 5 and d1 < d2 * 0.5:
+                        early_slowdown = True
+                    if d1 < 0 and d1 < d2:
+                        early_slowdown = True
             cow_target = PLAN["COW"]
             crash_fired = False
             if ANIMAL_ADVISOR_ON and day >= ANIMAL_ADVISOR_MIN_DAY:
                 trend_broken = (self.milk_peak >= 100
                                 and milk_now < MILK_TREND_DROP * self.milk_peak)
-                if milk_now < MILK_CRASH_PRICE or trend_broken:
+                if milk_now < MILK_CRASH_PRICE or trend_broken or early_slowdown:
                     crash_fired = True
                     cow_frozen = cows + self._unplaced_animal(invs, shed, "COW")
                     cow_target = cow_frozen
