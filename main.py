@@ -75,11 +75,6 @@ class Agent:
             "shops": list((obs.get("town") or {}).get("unlocked_shops") or []),
             "milk_crash": getattr(self.market, "milk_crash_active", False),
         }
-        # Autonomous unified allocator — re-weights PLAN in place each turn
-        try:
-            _brain.apply(obs)
-        except Exception:
-            pass
         self.planner.on_day(day)
         jobs = self.planner.collect_jobs(day, tiles, shed, seeds, invs,
                                          self.market.animals_ordered,

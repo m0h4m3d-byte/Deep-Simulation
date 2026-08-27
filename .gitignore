@@ -7,3 +7,4 @@ replays/
 .env
 .venv/
 .vscode/
+episode-*.json
