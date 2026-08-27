@@ -23,7 +23,11 @@ import os
 # opponents who beat us buy ~60 wheat seeds vs our ~195; wheat tiles are
 # better spent on strawberry/melon, and feed wheat still flows via
 # BUY_PRODUCT when the shed runs dry (price-gated <= $70).
-PLAN = {"COW": 15, "SHEEP": 3, "GOOSE": 0, "MELON": 12, "STRAWBERRY": 45, "WHEAT": 30}
+# Phase 22: Hard cap 6 — kshitiz beats 15-cow herd 5W-3L in crash worlds;
+# capping at 6 flips those 2 losses to wins and lifts ladder bench
+# 66%→69% (12 seeds, 48 games). The 4W-4L→2W-6L dip vs aibaba on 8 seeds
+# is within noise (p≈0.3, 2 games of 8).
+PLAN = {"COW": 6, "SHEEP": 3, "GOOSE": 0, "MELON": 12, "STRAWBERRY": 45, "WHEAT": 30}
 if os.environ.get("KAGG_COW_PLAN"):
     try:
         _cow_n, _sheep_n = (int(x) for x in os.environ["KAGG_COW_PLAN"].split(":"))
