@@ -32,6 +32,15 @@ if os.environ.get("KAGG_COW_PLAN"):
         PLAN["SHEEP"] = _sheep_n
     except ValueError:
         pass
+# Dynamic budget (Phase 21) — ties herd/crop sizes to last 10 ladder replays.
+# KAGG_DYNAMIC_BUDGET=1 activates it (branch dynamic-budget only).
+if os.environ.get("KAGG_DYNAMIC_BUDGET") == "1":
+    try:
+        from src.simulation.budget import recommend_plan
+        _dyn = recommend_plan()
+        PLAN.update({k: v for k, v in _dyn.items() if k in PLAN})
+    except Exception:
+        pass
 # Phase 6.2 verdict: CARROT burst (days 0..5, PLAN 12) was benchmarked and
 # REVERTED. The seed loop re-buys whenever seeds < target, and carrot's 3-day
 # cycle made that recycle 3x faster than melon's - 92 plantings against a 12
