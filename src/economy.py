@@ -27,7 +27,7 @@ import os
 # capping at 6 flips those 2 losses to wins and lifts ladder bench
 # 66%→69% (12 seeds, 48 games). The 4W-4L→2W-6L dip vs aibaba on 8 seeds
 # is within noise (p≈0.3, 2 games of 8).
-PLAN = {"COW": 6, "SHEEP": 3, "GOOSE": 0, "MELON": 12, "STRAWBERRY": 20, "WHEAT": 30}  # right-sized: 45->20 (plant_target ~11 + margin for weeds/loss, was 45 waste 34 seeds ~3.4k)
+PLAN = {"COW": 6, "SHEEP": 3, "GOOSE": 0, "MELON": 12, "STRAWBERRY": 20, "WHEAT": 15}  # wheat-right-sized: 30->15 (WHEAT plants avg 0.25 vs 30 waste 29.4 seeds, like STRAW)
 if os.environ.get("KAGG_COW_PLAN"):
     try:
         _cow_n, _sheep_n = (int(x) for x in os.environ["KAGG_COW_PLAN"].split(":"))
