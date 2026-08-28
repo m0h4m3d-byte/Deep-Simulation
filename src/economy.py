@@ -227,6 +227,21 @@ SEED_COST = {"WHEAT": 10, "CARROT": 20, "TOMATO": 50, "STRAWBERRY": 100, "MELON"
 BASE = {"WHEAT": 25, "CARROT": 35, "TOMATO": 60, "STRAWBERRY": 120, "MELON": 250,
         "EGG": 50, "MILK": 160, "WOOL": 200, "FERTILIZER": 100}
 
+# market-aware-sell branch: caps tuned to above_target (higher above_target = more sensitive to glut = smaller daily batch)
+# MELON 3.60, WOOL 3.20 most sensitive -> cap 20-30; MILK/STRAWBERRY 1.60 -> 40-50; WHEAT 0.20 resistant -> 150
+MARKET_AWARE_ON = os.environ.get("KAGG_MARKET_AWARE", "1") == "1"  # default ON in this branch (set 0 to revert)
+MARKET_AWARE_CAPS = {
+    "MELON": 25,       # 3.60 sq -> crash to $1 with few units
+    "WOOL": 30,        # 3.20 sq
+    "MILK": 40,        # 1.60 linear
+    "STRAWBERRY": 50,  # 1.60 linear
+    "EGG": 80,         # 0.20 log resistant
+    "WHEAT": 150,      # 0.20 log most resistant -> keep large
+    "FERTILIZER": 80,  # 0.40 linear
+    "CARROT": 60,      # 0.70 sqrt moderate
+    "TOMATO": 40,      # 0.60 sqrt
+}
+
 # ============================================================
 # BATCH-2 (P1) ENGINE #2: fertilizer working-stock buyer
 # ============================================================
@@ -698,7 +713,8 @@ class MarketEngine:
             if p == "WOOL" and not force_dump:
                 amt -= wool_keep
             if amt > 0 and (force_dump or day >= gate):
-                sell_capped(p, amt, 80)
+                cap = MARKET_AWARE_CAPS.get(p, 80) if MARKET_AWARE_ON else 80
+                sell_capped(p, amt, cap)
 
         fert = shed.get("FERTILIZER", 0)
         # Phase 12: no fertilizer price floor - sell everything above the
@@ -714,25 +730,30 @@ class MarketEngine:
         # exact baseline reserve of 2.
         fert_reserve = FERT_STOCK_TARGET if FERT_BUY_ENGINE_V1 else 2
         if fert > fert_reserve:
-            sell_capped("FERTILIZER", fert - fert_reserve, 80)
+            cap = MARKET_AWARE_CAPS["FERTILIZER"] if MARKET_AWARE_ON else 80
+            sell_capped("FERTILIZER", fert - fert_reserve, cap)
 
         melon = shed.get("MELON", 0)
         if melon > 0 and (force_dump or prices.get("MELON", 250) >= 30 or day >= 12):
-            sell_capped("MELON", melon, 80)
+            cap = MARKET_AWARE_CAPS["MELON"] if MARKET_AWARE_ON else 80
+            sell_capped("MELON", melon, cap)
 
         strawberry = shed.get("STRAWBERRY", 0)
         if strawberry > 0 and (force_dump or prices.get("STRAWBERRY", 120) >= 30
                                or day >= SELL_HOLD_DAY["STRAWBERRY"]):
-            sell_capped("STRAWBERRY", strawberry, 80)
+            cap = MARKET_AWARE_CAPS["STRAWBERRY"] if MARKET_AWARE_ON else 80
+            sell_capped("STRAWBERRY", strawberry, cap)
 
         wheat = shed.get("WHEAT", 0)
         sell_wheat_min = 0 if force_dump else animals_now + FEED_RESERVE
         if wheat > sell_wheat_min and (force_dump or prices.get("WHEAT", 25) >= 25):
-            sell_capped("WHEAT", wheat - sell_wheat_min, 150)
+            cap = MARKET_AWARE_CAPS["WHEAT"] if MARKET_AWARE_ON else 150
+            sell_capped("WHEAT", wheat - sell_wheat_min, cap)
 
         for p in ("CARROT", "TOMATO"):
             if shed.get(p, 0) > 0:
-                sell_capped(p, shed[p], 40)
+                cap = MARKET_AWARE_CAPS.get(p, 40) if MARKET_AWARE_ON else 40
+                sell_capped(p, shed[p], cap)
 
         if day >= 27:
             for p, q in list(shed.items()):
