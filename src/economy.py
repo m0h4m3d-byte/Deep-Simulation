@@ -521,8 +521,10 @@ class MarketEngine:
                 feed_cap = 4 if animals_now <= 2 else 2 if animals_now < 8 else 3
                 buy("feed", feed_cap, q * wheat_price, ["BUY_PRODUCT", "WHEAT", q], floor=0)
 
-        seed_plan = {"WHEAT": (PLAN["WHEAT"], 28, 8, 0), "MELON": (PLAN["MELON"], 13, 12 if day == 0 else 6, 0),
-                     "STRAWBERRY": (PLAN["STRAWBERRY"], 22, 10, 3)}
+        # no-waste-buying: last_day aligned to LAST_PLAYABLE_DAY(29)-first_yield_day
+        # WHEAT 28->27 (27+2=29), STRAW 22->19 (19+10=29), MELON 13 keeps (13+10=23 safe, 19+10=29 would also safe but keep 13 conservative)
+        seed_plan = {"WHEAT": (PLAN["WHEAT"], 27, 8, 0), "MELON": (PLAN["MELON"], 13, 12 if day == 0 else 6, 0),
+                     "STRAWBERRY": (PLAN["STRAWBERRY"], 19, 10, 3)}
         for crop, (target, last_day, cap, start_day) in seed_plan.items():
             if day > last_day or day < start_day:
                 continue
@@ -532,7 +534,10 @@ class MarketEngine:
                 if q > 0:
                     buy("seed_" + crop, cap, q * SEED_COST[crop], ["BUY_SEED", crop, q], units=q, floor=0)
 
-        if day <= 24:
+        # no-waste-buying: per-animal last day to guarantee at least one yield before day29
+        # GOOSE 4d -> 25 (25+4=29), SHEEP 6d -> 23 (23+6=29), COW 8d -> 21 (21+8=29); GOOSE not bought (PLAN 0) but keep for completeness
+        _ANIMAL_LAST_DAY = {"GOOSE": 25, "SHEEP": 23, "COW": 21}
+        if day <= 25:  # max cutoff
             day0_n = {"SHEEP": 2, "COW": 2}
             # BATCH-4/5 (P4 family): YARN-gated sheep-cap arms. Day-0-2
             # waves (exactly 4 sheep) precede the first shop draw, so
@@ -609,6 +614,9 @@ class MarketEngine:
                                        PLAN["COW"] + PLAN["SHEEP"] - cow_frozen)
             self.milk_crash_active = crash_fired
             for animal, target in (("SHEEP", sheep_target), ("COW", cow_target)):
+                # no-waste-buying: skip if beyond last viable day for this animal
+                if day > _ANIMAL_LAST_DAY.get(animal, 24):
+                    continue
                 have = (cows if animal == "COW" else sheep if animal == "SHEEP" else geese) \
                     + self._unplaced_animal(invs, shed, animal)
                 missing = target - have
