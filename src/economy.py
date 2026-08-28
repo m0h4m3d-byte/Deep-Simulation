@@ -506,9 +506,10 @@ class MarketEngine:
                     pending += cost
                     planned += 1
 
-        # Land is the highest-ROI investment; finance it before feed/seeds.
+        # no-4th-land experiment: stop at 3 quarters (75 tiles) like leaders — 4th land $4k is fixed rule with ~75% usage, ROI negative late
         unlocked = len(me.get("unlocked_quadrants", []))
-        if 0 < unlocked < len(LAND_COSTS) + 1 and day >= LAND_DAYS[unlocked - 1]:
+        # was: 0 < unlocked < len(LAND_COSTS)+1 (allows 4th at day12); now cap at 3 quadrants
+        if 0 < unlocked < len(LAND_COSTS) and day >= LAND_DAYS[unlocked - 1]:
             buy("land", 1, LAND_COSTS[unlocked - 1], ["BUY_LAND"])
 
         wheat_price = prices.get("WHEAT", 25)
