@@ -166,11 +166,26 @@ class FarmPlanner:
         return sum(1 for row in tiles for t in row
                    if isinstance(t, dict) and t.get("kind") == kind)
 
+    # weed-priority experiment: when weeds accumulate, DIG jumps above PLANT/WATER
+    WEED_PRIORITY_THRESHOLD = 15  # j5rb 15-20 kama tlb, default 15
+    WEED_PRIORITY_PRIO = 1  # foq zra3a (2) w ta7t FEED(0)
+
     def collect_jobs(self, day: int, tiles, shed, seeds, invs,
                      animals_ordered: Dict[str, int],
                      market_ctx: Optional[dict] = None) -> List[tuple]:
         """Build the priority-sorted job queue. Mirrors Agent._collect_jobs."""
         jobs = []
+        # count weeds up front (handles dict kind==WEED and string "WEED")
+        _weed_count = 0
+        for _r in tiles:
+            for _t in _r:
+                if _t is None:
+                    continue
+                if isinstance(_t, str) and _t == "WEED":
+                    _weed_count += 1
+                elif isinstance(_t, dict) and _t.get("kind") == "WEED":
+                    _weed_count += 1
+        _dig_prio = self.WEED_PRIORITY_PRIO if _weed_count >= self.WEED_PRIORITY_THRESHOLD else 3
         melon_cap = 28
         melon_on_field = sum(1 for row in tiles for t in row
                              if isinstance(t, dict) and t.get("kind") == "PLANT"
@@ -202,11 +217,12 @@ class FarmPlanner:
                         if cd["is_ongoing"] and age >= cd["first_yield_day"]:
                             jobs.append((pos, "FERTILIZE", 5))
                 elif isinstance(t, dict) and t.get("kind") == "WEED":
-                    # Phase 1 experiments (DIG@1, early containment @<=12)
-                    # BOTH crashed score ($57k vs $71k): chasing weeds starves
-                    # watering/planting. baseline's prio 3 (ignoring weeds) wins.
-                    # Restored to baseline parity.
-                    jobs.append(((x, y), "DIG", 3))
+                    # weed-priority branch: when _weed_count >=15, DIG@1 foq zra3a
+                    # (Phase 1 DIG@1 crash was with unconditional prio 1; here it's
+                    # conditional threshold, so watering not starved in clean fields)
+                    jobs.append(((x, y), "DIG", _dig_prio))
+                elif isinstance(t, str) and t == "WEED":
+                    jobs.append(((x, y), "DIG", _dig_prio))
 
                 # Phase 5 verdict: strict JIT (build ONLY for unplaced animals) was
         # benchmarked and REVERTED - purchase-wave latency shrank the herd
