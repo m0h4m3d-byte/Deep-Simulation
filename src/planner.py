@@ -439,18 +439,24 @@ class FarmPlanner:
         task_tile = (task[0], task[1]) if task else None
         task_op = task[2] if task else None
         # --- Zone-based-v2 filtering (2×2 grid, fair allocation, triple guard) ---
+        # Fix trapped worker: compute allowed jobs BEFORE has_work
+        def _is_allowed_for_worker(job, w_idx):
+            # Base fix: all allowed. Feeder experiment can be enabled by changing this to FEEDER_IDX logic.
+            return True
+
         zones = getattr(self, 'zones', [])
         worker_zone = None
         can_help = True
         zone_tasks = {}
         if zones:
             worker_zone = u_idx % len(zones)
-            # build per-zone task counts for triple guard
+            # build per-zone task counts ONLY from allowed jobs (fix trapped worker)
             for zj in jobs:
                 if zj[0] in used_jobs:
                     continue
-                # DEPOSIT not counted as zone work (shed)
                 if zj[1] == "DEPOSIT":
+                    continue
+                if not _is_allowed_for_worker(zj, u_idx):
                     continue
                 z = ZoneManager._zone_for_pos(zj[0], zones)
                 op = zj[1]
