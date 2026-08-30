@@ -1,7 +1,7 @@
 # PROJECT_NOTES — DeepSim Kaggriculture
 
 > ملف تتبع مركزي للمشاكل المكتشفة والمرفوضة — بدل الاعتماد على الذاكرة فقط.
-> آخر تحديث: 2026-08-30 — zone-based-v2 rebuilt على `config.py` النضيف — `v26` أساس `90225/69897/26-32/5` → zone `94487/71953/9-32/14` | vs kshitiz 19/13 2W-0L + vs DevilQ/Simon 2W-0L
+> آخر تحديث: 2026-08-30 — zone-based-v2 **مدمج في main** `f95bacd` — أساس `90225/69897/26-32/5` → zone+DROP `101973/77129/8-32/14` (+12.9k) | هدر 10.1%→5.0%
 
 > **مبدأ توجيهي عام:** الوقت (`turns` الـ 720) هو المورد الوحيد غير القابل للتعويض في اللعبة — الفلوس، البذور، الحيوانات كلها قابلة للتصحيح لاحقًا (بيع، شراء، إعادة زراعة)، لكن `turn` ضايع في حركة (`65%` من الـ turns حركة `src/planner.py:390` `4224/6500`) أو انتظار (`PASS` `392` turn للـ `farmer`) مش هيرجع. أي تصميم مستقبلي لازم يعامل استهلاك الوقت (خصوصًا المسافة/الحركة `max_dist 5-6` في `far cases 0.3-1.5%`) كتكلفة صريحة `score = f(priority, distance, remaining, urgency)`، مش تأثير جانبي لـ `sort`.
 > **مبدأ تشخيصي:** المشاكل ممكن يكون عرضها الظاهر في ملف، وسببها الحقيقي في ملف تاني تمامًا — زي ما اكتشفنا إن مشكلة `BUILD/PLANT` في `planner.py` كان سببها الحقيقي توقيت الشراء في `economy.py` (`day0 hour<12 skip`). أي تشخيص جديد لازم يتحقق من كل الملفات المترابطة (`planner.py`, `economy.py`, `strategy.py`, `main.py`, `constants.py`) قبل ما نفترض إن الحل محصور في أول ملف بيبان فيه العرض.
@@ -17,9 +17,10 @@
 | 5 | `49efc80` `no-waste-buying` | `WHEAT 28→27` `STRAW 22→19` `MELON 13 keeps` `COW<=21 SHEEP<=23` `src/economy.py:524,537` | `+70` مجاني `weeds 32.1→32.8` لا ضرر | **مدمج** `cb45531` |
 | 6 | `4da9199` `right-sized-plan` | `PLAN STRAW 45→20` `src/economy.py:30` (قريب من `plant_target 11` + هامش) | `+2.4k` `worst +2.5k` `plants 11.2=11.2` | **مدمج** `967e7d3` |
 | 7 | `134ccd5` `wheat-right-sized` | `PLAN WHEAT 30→15` `src/economy.py:30` (avg plants 0.25 vs 30 waste 29.4) | `worst +6-8k` `stdev -35%` `mean -0.3%` | **مدمج** `a6da650` |
+| 8 | `f95bacd` `zone-based-v2 + end-season DROP` | `planner.py ZoneManager 2×2 + main.py hour + DROP last10 + seed 27/19→24/14` `src/planner.py:267` `src/economy.py:306` | `day1 5→14` `mean 90225→101973 (+12.9k)` `worst 69897→77129` `escapes 26→8/32` `waste 10.1%→5.0%` | **مدمج في main** `f95bacd` |
 
-> **آخر commit على `main`:** `edcdcc2` `docs: add PROJECT_NOTES.md` على `a6da650` (الستة + `no-4th` + `no-waste` + `right-sized` ST20/W15)
-> **آخر نسخة مرفوعة:** `v26` `55837644` `v26_wheat15.tar.gz` `2026-08-28 07:27:52` `main a6da650` — `COMPLETE 683.5` (31 PUBLIC +1 VALIDATION =32)
+> **آخر commit على `main`:** `f95bacd` `zone-based-v2: end-season waste fix` على `955a121` — مدمج رسمياً (32 `mean 101973` `worst 77129` `escapes 8/32` `day1 14`)
+> **آخر نسخة مرفوعة:** `v26` `55837644` `v26_wheat15.tar.gz` `2026-08-28 07:27:52` `main a6da650` — `COMPLETE 683.5` (31 PUBLIC +1 VALIDATION =32) — التالي `v27` سيكون zone+DROP
 
 ## 2) اتجرب وفشل — عشان محدش يكررهم من غير داعي
 
@@ -28,7 +29,8 @@
 - `dedicated-feeder` / `dynamic-feeder` `774e73a`/`e73880f`/`8097ac9` `src/planner.py:334` بكل نسخه `1 feeder` `6 نبات 32/32`، `2 feeders` `5 نبات 31/32`، `ceil(animals/4)` `6 نبات 28/32` — **كلهم زودوا الهروب** (vs `23/32` الأساس) — **مرفوض**
 - `nearest-to-worker` `df2c522` `src/planner.py:390` `_prefer_tie` من `pos` — **محايد** (الكود كان already صح من مكان العامل، ليس من الشيد) `day1 5` `escapes 26/32` = `main`
 - `zone-based-v2` `economy.py:616 + planner.py:ZoneManager` `BUILD/PLANT` زوني ثنائي الأبعاد `2×2` + `quota` + `can_help` + `day0 hour<12 skip` — `day1 11` vs `5` (+6) `PASS 0/4` لكن `32 mean 83390 vs 90225 (-6835)` `worst 66236 vs 69897 (-3661)` `escapes 21/32 0.84 vs 26/32 1.16` — **مكسب يوم0 يُعوَّض بخسارة حيوانية/نقدية mid-game → مرفوض كتحسين عام (يبقى فرع تجريبي فقط)`
-- `zone-based-v2 REBUILT 2026-08-30` على `config.py` النضيف + `main.py hour` + `planner.py ZoneManager` (2×2، worker_idx%4، quota, triple guard relaxed) — `day1 14` vs `5` (+9) `PASS 0/4` `32 mean 94487 vs 90225 (+4262)` `worst 71953 vs 69897 (+2056)` `best 111604 vs 105901` `escapes 9/32 0.28 vs 26/32 1.16` — vs kshitiz 19/13 2W-0L (+7233/+9565 أساس → +5955/+6982 zones) vs DevilQ `715809590` W 87707-80244 و Simon `749389386` W 75342-61286 — **يبقى فرع تجريبي، لم يُدمج في main بعد**
+- `zone-based-v2 REBUILT 2026-08-30` على `config.py` النضيف + `main.py hour` + `planner.py ZoneManager` (2×2، worker_idx%4، quota, triple guard relaxed) — `day1 14` vs `5` (+9) `PASS 0/4` `32 mean 94487 vs 90225 (+4262)` `worst 71953 vs 69897 (+2056)` `best 111604 vs 105901` `escapes 9/32 0.28 vs 26/32 1.16` — vs kshitiz 19/13 2W-0L (+7233/+9565 أساس → +5955/+6982 zones) vs DevilQ `715809590` W 87707-80244 و Simon `749389386` W 75342-61286 — **تم دمجه في main `f95bacd` مع تحسين نهاية الموسم `+DROP` → `mean 101973`**
+- `zone end-season DROP` `planner.py:267` `DROP last10` + `economy.py:306` `seed 27/19→24/14` — `mean 94487→101973 (+2.6k)` `waste 12.4%→5.0%` `inv 6365→52` `seeds 2990→382` — **مدمج**
 
 ## 3) مشاكل مكتشفة لسه مفتوحة — بالأولوية
 
