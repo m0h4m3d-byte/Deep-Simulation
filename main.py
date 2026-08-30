@@ -70,6 +70,7 @@ class Agent:
                                           unlocked_shops=list((obs.get("town") or {}).get("unlocked_shops") or []))
         market_ctx = {
             "day": day,
+            "hour": self.hour,
             "prices": prices,
             "inventory": market["inventory"],
             "shops": list((obs.get("town") or {}).get("unlocked_shops") or []),

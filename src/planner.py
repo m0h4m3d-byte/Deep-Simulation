@@ -50,21 +50,28 @@ Phase 5 (leaderboard-driven efficiency, benchmark-gated):
 
 from typing import Dict, List, Optional, Set, Tuple
 
-import os
-
 from src.constants import (
     CROP_CONFIG, SHED_TILES, PASTURE_POS, COOP_POS,
 )
 from src.economy import PLAN, PASTURE_BUFFER, MarketEngine, ANIMAL_ADVISOR_ON
-from src.strategy import strategy
+from src.config import (
+    CROP_ADVISOR_ON,
+    MELON_LAST_DAY, STRAWBERRY_LAST_DAY,
+    PLANT_TARGET_FULL, PLANT_TARGET_LATE,
+    STRAW_LEAD_THRESHOLD, ADVISOR_MIN_DAY,
+    LAST_PLAYABLE_DAY,
+)
 
-# ============================================================
-# Phase 13: Market-adaptive crop selection (DeepSim project).
-# ON by default (30-seed: $86.3k vs $85.5k, worst seed +$18.7k).
-# KAGG_CROP_ADVISOR=0 restores the fixed STRAWBERRY->MELON->WHEAT
-# priority (bit-identical pre-Phase-13 behavior).
-# ============================================================
-CROP_ADVISOR_ON = os.environ.get("KAGG_CROP_ADVISOR", "1") == "1"
+# --- Day gates (were src/strategy.py — logic lives here, numbers live in config.py) ---
+def is_melon_season(day: int) -> bool:
+    return day <= MELON_LAST_DAY
+
+def is_strawberry_season(day: int) -> bool:
+    return day <= STRAWBERRY_LAST_DAY
+
+def plant_target(day: int) -> int:
+    return PLANT_TARGET_FULL if day <= STRAWBERRY_LAST_DAY else PLANT_TARGET_LATE
+
 
 DEFAULT_CROP_ORDER = ("STRAWBERRY", "MELON", "WHEAT")
 
@@ -87,11 +94,11 @@ def _advisor_crop_order(day, market_ctx):
     except Exception:
         proj = {}
 
-    straw_active = strategy.is_strawberry_season(day)
+    straw_active = is_strawberry_season(day)
     straw_ok = (straw_active and
                 (day < ADVISOR_MIN_DAY or
-                 proj.get("STRAWBERRY") is None or
-                 proj.get("STRAWBERRY", 0) >= STRAW_LEAD_THRESHOLD))
+                  proj.get("STRAWBERRY") is None or
+                  proj.get("STRAWBERRY", 0) >= STRAW_LEAD_THRESHOLD))
 
     order = []
     if straw_ok:
@@ -106,23 +113,11 @@ def _advisor_crop_order(day, market_ctx):
     return order or list(DEFAULT_CROP_ORDER)
 
 
-# Projected strawberry price below which we stop leading with it.
-# Calibration: weak-forever worlds plateau at $160-185; recovering worlds
-# jump to $200+ the moment a strawberry shop unlocks. 190 sits in the gap.
-STRAW_LEAD_THRESHOLD = 190
-# Before this day every world projects identically (~$160-170): realized
-# shop draws are too few to separate weak from recovering worlds. Day 12 is
-# the calibrated optimum: recovering worlds reveal themselves by their day-12
-# shop draw, so demotion never fires on false signals (30-seed: +$851 avg,
-# 3W/0L/27T, worst-case seed 11 improves +$18.7k).
-ADVISOR_MIN_DAY = 12
-
-
 def _crop_season_active(crop, day):
     if crop == "STRAWBERRY":
-        return strategy.is_strawberry_season(day)
+        return is_strawberry_season(day)
     if crop == "MELON":
-        return strategy.is_melon_season(day)
+        return is_melon_season(day)
     return True
 
 # ============================================================
@@ -132,12 +127,99 @@ def _crop_season_active(crop, day):
 # be harvested from day d + first_yield_day, so any planting with
 # d + first_yield_day > LAST_PLAYABLE_DAY can never yield (baseline wasted seeds,
 # tiles and labor: wheat planted day 28, strawberry planted days 20-22).
-LAST_PLAYABLE_DAY = 29
+# LAST_PLAYABLE_DAY lives in config.py (imported above).
 
 
 def expected_ready_day(crop: str, planted_day: int) -> int:
     """Maturity Tracker: the day a crop first becomes harvestable."""
     return planted_day + CROP_CONFIG[crop]["first_yield_day"]
+
+
+# ============================================================
+# ZoneManager — rebuilt from scratch (zone-based-v2)
+# 4 components: 2×2 grid, fair worker_idx % num_zones, dynamic quota, triple help guard
+# ============================================================
+import math as _zm_math
+
+
+class ZoneManager:
+    def __init__(self, tiles, num_workers, plant_target=20):
+        self.tiles = tiles
+        self.num_workers = num_workers
+        self.plant_target = plant_target
+        self.zones = self._compute_zones(tiles, num_workers)
+        self.helped_today = set()
+        self.base_quota = _zm_math.ceil(plant_target / num_workers) if num_workers else 0
+
+    @staticmethod
+    def _compute_zones(tiles, num_workers):
+        H = len(tiles)
+        W = len(tiles[0]) if H else 0
+        n = num_workers
+        cols = _zm_math.ceil(_zm_math.sqrt(n))
+        rows = _zm_math.ceil(n / cols) if cols else 1
+        base_h, rem_h = divmod(H, rows)
+        row_heights = [base_h + (1 if r < rem_h else 0) for r in range(rows)]
+        row_y0 = []
+        y = 0
+        for h in row_heights:
+            row_y0.append(y)
+            y += h
+        zones = []
+        for r in range(rows):
+            remaining = n - len(zones)
+            cols_this_row = cols if r < rows - 1 else remaining
+            if cols_this_row <= 0:
+                break
+            base_w, rem_w = divmod(W, cols_this_row)
+            col_widths = [base_w + (1 if c < rem_w else 0) for c in range(cols_this_row)]
+            col_x0 = []
+            x = 0
+            for w in col_widths:
+                col_x0.append(x)
+                x += w
+            for c in range(cols_this_row):
+                x0 = col_x0[c]
+                x1 = x0 + col_widths[c] - 1
+                y0 = row_y0[r]
+                y1 = y0 + row_heights[r] - 1
+                zones.append((x0, y0, x1, y1))
+                if len(zones) >= n:
+                    break
+        return zones
+
+    @staticmethod
+    def _zone_for_pos(pos, zones):
+        x, y = pos
+        for idx, (x0, y0, x1, y1) in enumerate(zones):
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                return idx
+        return 0
+
+    def zone_for_worker(self, worker_idx):
+        return worker_idx % len(self.zones) if self.zones else 0
+
+    def quota_for_zone(self, zone_idx, zone_empty_counts=None):
+        if zone_empty_counts is not None:
+            empty = zone_empty_counts.get(zone_idx, 25)
+            if empty == 0:
+                return 0
+        return self.base_quota
+
+    def can_help(self, worker_idx, zone_tasks):
+        if worker_idx in self.helped_today:
+            return False
+        my_zone = self.zone_for_worker(worker_idx)
+        tasks = zone_tasks.get(my_zone, {})
+        has_work = (tasks.get('PLANT', 0) > 0 or tasks.get('WATER', 0) > 0 or
+                    tasks.get('HARVEST', 0) > 0 or tasks.get('DIG', 0) > 0)
+        return not has_work
+
+    def mark_helped(self, worker_idx):
+        self.helped_today.add(worker_idx)
+
+    def reset_day(self):
+        self.helped_today.clear()
 
 
 class FarmPlanner:
@@ -154,12 +236,18 @@ class FarmPlanner:
     def reset(self):
         self.day = 0
         self.unit_task = {}
+        self.zones = []
+        self.zone_helped = set()
+        self._zone_mgr = None
 
     def on_day(self, day: int):
         """Roll over the day; a fresh game (day 0) resets everything."""
         if day != self.day:
             self.day = day
             self.unit_task = {}
+            self.zone_helped = set()
+            if self._zone_mgr:
+                self._zone_mgr.reset_day()
 
     @staticmethod
     def _count_structs(tiles, kind: str) -> int:
@@ -233,49 +321,52 @@ class FarmPlanner:
         # Geometry note: total pens can never sit full while an animal is
         # unplaced (pens > placed and pens = ordered+2 > animals >= placed),
         # so the count below (existing pens of ANY occupancy) is deadlock-free.
-        build_target = min(PLAN["COW"] + PLAN["SHEEP"],
-                           sum(animals_ordered.get(k, 0) for k in ("COW", "SHEEP")) + PASTURE_BUFFER)
-        total_pastures = self._count_structs(tiles, "PASTURE")
-        # Phase 4 fix: baseline's cap counted only EXISTING pastures and never
-        # incremented while emitting, so every PASTURE_POS got a build job
-        # (up to 28 pastures!) - ~10 tiles of permanent crop capacity burned.
-        # pasture_jobs = existing + queued builds, so the cap actually binds.
-        pasture_jobs = total_pastures
-        for p in PASTURE_POS:
-            t = tiles[p[1]][p[0]]
-            if t is None and pasture_jobs < build_target:
-                jobs.append((p, "BUILD_PASTURE", 2))
-                pasture_jobs += 1
-            elif isinstance(t, dict) and t.get("kind") == "PASTURE" and "animal" not in t:
-                # Phase 18: sheep-placement priority ONLY while the milk
-                # crash pivot is active (v18 ep99844808: 4 sheep shelved
-                # 12+ days beside 4-6 EMPTY pens because COW always won the
-                # slot). In healthy worlds the baseline COW-first rule is
-                # kept bit-for-bit — cows are the better producer there.
-                un_cow = MarketEngine._unplaced_animal(invs, shed, "COW")
-                un_sheep = MarketEngine._unplaced_animal(invs, shed, "SHEEP")
-                crash = bool(market_ctx and market_ctx.get("milk_crash"))
-                if ANIMAL_ADVISOR_ON and crash and un_sheep > un_cow and un_sheep > 0:
-                    jobs.append((p, "PLACE", 2, "SHEEP"))
-                else:
-                    for a in ("COW", "SHEEP"):
-                        if MarketEngine._unplaced_animal(invs, shed, a) > 0:
-                            jobs.append((p, "PLACE", 2, a))
-                            break
+        _hour = market_ctx.get("hour", 0) if market_ctx else 0
+        _skip_build_day0 = (day == 0 and _hour < 12)
+        if not _skip_build_day0:
+            build_target = min(PLAN["COW"] + PLAN["SHEEP"],
+                               sum(animals_ordered.get(k, 0) for k in ("COW", "SHEEP")) + PASTURE_BUFFER)
+            total_pastures = self._count_structs(tiles, "PASTURE")
+            # Phase 4 fix: baseline's cap counted only EXISTING pastures and never
+            # incremented while emitting, so every PASTURE_POS got a build job
+            # (up to 28 pastures!) - ~10 tiles of permanent crop capacity burned.
+            # pasture_jobs = existing + queued builds, so the cap actually binds.
+            pasture_jobs = total_pastures
+            for p in PASTURE_POS:
+                t = tiles[p[1]][p[0]]
+                if t is None and pasture_jobs < build_target:
+                    jobs.append((p, "BUILD_PASTURE", 2))
+                    pasture_jobs += 1
+                elif isinstance(t, dict) and t.get("kind") == "PASTURE" and "animal" not in t:
+                    # Phase 18: sheep-placement priority ONLY while the milk
+                    # crash pivot is active (v18 ep99844808: 4 sheep shelved
+                    # 12+ days beside 4-6 EMPTY pens because COW always won the
+                    # slot). In healthy worlds the baseline COW-first rule is
+                    # kept bit-for-bit — cows are the better producer there.
+                    un_cow = MarketEngine._unplaced_animal(invs, shed, "COW")
+                    un_sheep = MarketEngine._unplaced_animal(invs, shed, "SHEEP")
+                    crash = bool(market_ctx and market_ctx.get("milk_crash"))
+                    if ANIMAL_ADVISOR_ON and crash and un_sheep > un_cow and un_sheep > 0:
+                        jobs.append((p, "PLACE", 2, "SHEEP"))
+                    else:
+                        for a in ("COW", "SHEEP"):
+                            if MarketEngine._unplaced_animal(invs, shed, a) > 0:
+                                jobs.append((p, "PLACE", 2, a))
+                                break
 
-        coop_target = 1 if animals_ordered.get("GOOSE", 0) > 0 else 0
-        if self._count_structs(tiles, "COOP") < coop_target:
+            coop_target = 1 if animals_ordered.get("GOOSE", 0) > 0 else 0
+            if self._count_structs(tiles, "COOP") < coop_target:
+                for p in COOP_POS:
+                    if tiles[p[1]][p[0]] is None:
+                        jobs.append((p, "BUILD_COOP", 2))
             for p in COOP_POS:
-                if tiles[p[1]][p[0]] is None:
-                    jobs.append((p, "BUILD_COOP", 2))
-        for p in COOP_POS:
-            t = tiles[p[1]][p[0]]
-            if isinstance(t, dict) and t.get("kind") == "COOP" and "animal" not in t:
-                if MarketEngine._unplaced_animal(invs, shed, "GOOSE") > 0:
-                    jobs.append((p, "PLACE", 2, "GOOSE"))
+                t = tiles[p[1]][p[0]]
+                if isinstance(t, dict) and t.get("kind") == "COOP" and "animal" not in t:
+                    if MarketEngine._unplaced_animal(invs, shed, "GOOSE") > 0:
+                        jobs.append((p, "PLACE", 2, "GOOSE"))
 
-        active = {"WHEAT": True, "MELON": strategy.is_melon_season(day),
-                  "STRAWBERRY": strategy.is_strawberry_season(day)}
+        active = {"WHEAT": True, "MELON": is_melon_season(day),
+                  "STRAWBERRY": is_strawberry_season(day)}
         if CROP_ADVISOR_ON and market_ctx:
             crop_order = _advisor_crop_order(day, market_ctx)
         else:
@@ -283,13 +374,13 @@ class FarmPlanner:
         shed_tiles = set(SHED_TILES)
         plant_count = sum(1 for row in tiles for t in row
                           if isinstance(t, dict) and t.get("kind") == "PLANT")
-        plant_target = strategy.plant_target(day)
+        p_target = plant_target(day)
         for y in range(10):
             for x in range(10):
                 if (x, y) in shed_tiles or tiles[y][x] == "LOCKED":
                     continue
                 if tiles[y][x] is None:
-                    if plant_count >= plant_target:
+                    if plant_count >= p_target:
                         break
                     for crop in crop_order:
                         if not active.get(crop) or seeds.get(crop, 0) <= 0:
@@ -315,6 +406,14 @@ class FarmPlanner:
             if depositable:
                 near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
                 jobs.append((near, "DEPOSIT", 2, depositable[0], u_idx))
+        # --- ZoneManager 2×2 rebuild: fixed 4 zones (NW/NE/SW/SE) ---
+        try:
+            self.zones = ZoneManager._compute_zones([[None]*10 for _ in range(10)], 4)
+            self._zone_mgr = ZoneManager(tiles, 4, plant_target=p_target)
+            self._zone_mgr.zones = self.zones
+            self._zone_mgr.helped_today = self.zone_helped
+        except Exception:
+            self.zones = [(0, 0, 4, 4), (5, 0, 9, 4), (0, 5, 4, 9), (5, 5, 9, 9)]
         jobs.sort(key=lambda j: j[2])
         return jobs
 
@@ -329,6 +428,27 @@ class FarmPlanner:
         task = self.unit_task.get(u_idx)
         task_tile = (task[0], task[1]) if task else None
         task_op = task[2] if task else None
+        # --- Zone-based-v2 filtering (2×2 grid, fair allocation, triple guard) ---
+        zones = getattr(self, 'zones', [])
+        worker_zone = None
+        can_help = True
+        zone_tasks = {}
+        if zones:
+            worker_zone = u_idx % len(zones)
+            # build per-zone task counts for triple guard
+            for zj in jobs:
+                if zj[0] in used_jobs:
+                    continue
+                # DEPOSIT not counted as zone work (shed)
+                if zj[1] == "DEPOSIT":
+                    continue
+                z = ZoneManager._zone_for_pos(zj[0], zones)
+                op = zj[1]
+                zone_tasks.setdefault(z, {})
+                zone_tasks[z][op] = zone_tasks[z].get(op, 0) + 1
+            my_tasks = zone_tasks.get(worker_zone, {})
+            has_work = any(my_tasks.get(k, 0) > 0 for k in ('PLANT', 'WATER', 'HARVEST', 'DIG', 'BUILD_PASTURE', 'BUILD_COOP', 'PLACE', 'FEED', 'CARE', 'COLLECT_FERTILIZER', 'FERTILIZE'))
+            can_help = not has_work
         pick = None
         pick_prio = None
         for j in jobs:
@@ -338,6 +458,12 @@ class FarmPlanner:
                 continue
             if j[1] == "FEED" and inv.get("WHEAT", 0) <= 0 and shed.get("WHEAT", 0) <= 0:
                 continue
+            # zone filter: stay in my zone unless triple guard allows helping
+            if zones and worker_zone is not None and j[1] != "DEPOSIT":
+                job_zone = ZoneManager._zone_for_pos(j[0], zones)
+                in_my_zone = (job_zone == worker_zone)
+                if not in_my_zone and not can_help:
+                    continue
             prio = j[2]
             if j[0] == task_tile:
                 prio -= 100
@@ -348,6 +474,16 @@ class FarmPlanner:
                 pick_prio = prio
         if pick is None:
             return ["PASS"]
+        # mark triple-guard help
+        if zones and worker_zone is not None and pick[1] != "DEPOSIT":
+            try:
+                _jz = ZoneManager._zone_for_pos(pick[0], zones)
+                if _jz != worker_zone:
+                    self.zone_helped.add(u_idx)
+                    if self._zone_mgr:
+                        self._zone_mgr.mark_helped(u_idx)
+            except Exception:
+                pass
         target, op = pick[0], pick[1]
         if op == "DEPOSIT":
             if pos == list(target) and inv.get(pick[3], 0) > 0:

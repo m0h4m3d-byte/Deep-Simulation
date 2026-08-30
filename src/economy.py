@@ -8,43 +8,15 @@ change to the numbers below must be reflected there or the test fails.
 """
 
 from typing import Dict, List
-import os
 
-# ============================================================
-# Economy tunables (ported verbatim from src/main.py baseline)
-# ============================================================
-# Phase 14 DEFAULT (DeepSim live-replay analysis): cow-heavy herd. Ladder
-# opponents who beat us run ~17 COW / 7 SHEEP; cows produce every 2 days at
-# $160+ and double the fertilizer stream. 30-seed benchmark: $89,373 avg vs
-# $85,486 for the old 6/12 split (worst case also improves $42k -> $52k).
-# KAGG_COW_PLAN="COW:SHEEP" overrides for benchmarking (e.g. "6:12" restores
-# the pre-Phase-14 split).
-# Phase 17 DEFAULT (60-seed benchmark: $93,209 vs $89,321 at 140). Ladder
-# opponents who beat us buy ~60 wheat seeds vs our ~195; wheat tiles are
-# better spent on strawberry/melon, and feed wheat still flows via
-# BUY_PRODUCT when the shed runs dry (price-gated <= $70).
-# Phase 22: Hard cap 6 — kshitiz beats 15-cow herd 5W-3L in crash worlds;
-# capping at 6 flips those 2 losses to wins and lifts ladder bench
-# 66%→69% (12 seeds, 48 games). The 4W-4L→2W-6L dip vs aibaba on 8 seeds
-# is within noise (p≈0.3, 2 games of 8).
-PLAN = {"COW": 6, "SHEEP": 3, "GOOSE": 0, "MELON": 12, "STRAWBERRY": 20, "WHEAT": 15}  # wheat-right-sized: 30->15 (WHEAT plants avg 0.25 vs 30 waste 29.4 seeds, like STRAW)
-if os.environ.get("KAGG_COW_PLAN"):
-    try:
-        _cow_n, _sheep_n = (int(x) for x in os.environ["KAGG_COW_PLAN"].split(":"))
-        PLAN = dict(PLAN)
-        PLAN["COW"] = _cow_n
-        PLAN["SHEEP"] = _sheep_n
-    except ValueError:
-        pass
-# Dynamic budget (Phase 21) — ties herd/crop sizes to last 10 ladder replays.
-# KAGG_DYNAMIC_BUDGET=1 activates it (branch dynamic-budget only).
-if os.environ.get("KAGG_DYNAMIC_BUDGET") == "1":
-    try:
-        from src.simulation.budget import recommend_plan
-        _dyn = recommend_plan()
-        PLAN.update({k: v for k, v in _dyn.items() if k in PLAN})
-    except Exception:
-        pass
+# All tunables imported from single source of truth — src/config.py is the ONLY
+# place that holds numbers. No os.environ / KAGG_* reads exist anywhere.
+from src.config import (
+    PLAN, FEED_RESERVE, FERT_RESERVE,
+    ANIMAL_ADVISOR_ON, MILK_CRASH_PRICE, ANIMAL_ADVISOR_MIN_DAY, MILK_TREND_DROP,
+    PASTURE_BUFFER, HIRE_TARGET, HIRE_RAMP,
+)
+
 # Phase 6.2 verdict: CARROT burst (days 0..5, PLAN 12) was benchmarked and
 # REVERTED. The seed loop re-buys whenever seeds < target, and carrot's 3-day
 # cycle made that recycle 3x faster than melon's - 92 plantings against a 12
@@ -52,31 +24,6 @@ if os.environ.get("KAGG_DYNAMIC_BUDGET") == "1":
 # money floated ~$0 until day 12), strawberry plantings fell 183 -> 102 and
 # shed clogging blocked deposits (day-15 cash $7,340 -> $994). Avg collapsed
 # $81,607 -> $70,053. Carrot flavor stays OUT: baseline wheat/melon/strawberry.
-FEED_RESERVE = 4
-FERT_RESERVE = 0
-
-# Phase 15: AnimalAdvisor (milk-crash herd pivot). See build_orders.
-ANIMAL_ADVISOR_ON = os.environ.get("KAGG_ANIMAL_ADVISOR", "1") == "1"
-MILK_CRASH_PRICE = 120
-ANIMAL_ADVISOR_MIN_DAY = 10
-# Phase 16: trend trigger — fire when price slides this fraction off its
-# running per-game peak (0.75 = a 25% drop).
-MILK_TREND_DROP = 0.75
-# Phase 5 verdict: strict just-in-time pastures (build ONLY for unplaced
-# animals, buffer 0) were benchmarked and REVERTED: purchase-wave latency
-# shrank the herd (wool 118 -> 69 units, day-15 cash $7,138 -> $438) and
-# score fell $81,479 -> $74,982. The empirically best policy stays the
-# Phase-4 one: build pens at ordered + PASTURE_BUFFER - purchases arrive in
-# a continuous stream, so pens are ready just before animals, and the 2-tile
-# buffer is the ONLY empty-pen waste (vs baseline's unbounded empty pens).
-PASTURE_BUFFER = 2
-# NOTE: the Phase-2 hire law (workers = 2 + day//3) was tried and REVERTED:
-# the game RESETS hired hands to zero every day, so baseline's aggressive daily
-# ramp (min(HIRE_TARGET, HIRE_RAMP + day)) is required - the slow law left
-# the farm with ~37% fewer worker-days and crashed the score to $25.5k
-# (vs baseline's $71k). Worker specialization (planner) stays; hiring is baseline.
-HIRE_TARGET = 12  # baseline baseline
-HIRE_RAMP = 3
 # Phase 6/6.1/6.3 verdicts (all benchmarked, ALL REVERTED to baseline's 12):
 #   - flat 14        : cost doubled, avg $74,000
 #   - surge 14 18-22 : cost +$3.1k, avg $78,808
@@ -204,190 +151,23 @@ RESERVE = 15
 #
 # Phase 12 (2026-08): Phase 12 adopted - reference for future phases:
 # combined-3-run avg >= $85,517 + 100% wins.
-SHED_CAPACITY = 100
-SHED_DUMP_AT = 80
-# P8 FIX: sell EVERYTHING immediately — in competitive play, holding inventory
-# means losing market share. Convert to cash instantly for reinvestment.
-SELL_HOLD_DAY = {"MILK": 0, "WOOL": 0, "EGG": 0, "STRAWBERRY": 0}
-MILK_BULL_D12 = 180
-MILK_BULL_HOLD_DAY = 20
-MILK_BAIL_FROM_DAY = 16
-MILK_BAIL_FACTOR = 0.85
+from src.config import (
+    SHED_CAPACITY, SHED_DUMP_AT, SELL_HOLD_DAY,
+    MILK_BULL_D12, MILK_BULL_HOLD_DAY, MILK_BAIL_FROM_DAY, MILK_BAIL_FACTOR,
+    ANIMALS, SEED_COST, BASE,
+    MARKET_AWARE_ON, MARKET_AWARE_CAPS,
+)
 
-ANIMALS = {
-    "COW": {"cost": 400, "struct": "PASTURE", "product": "MILK"},
-    "SHEEP": {"cost": 500, "struct": "PASTURE", "product": "WOOL"},
-    "GOOSE": {"cost": 300, "struct": "COOP", "product": "EGG"},
-}
-
-# Seed cost per crop (matches src/constants.CROP_CONFIG[..]["seed_cost"]).
-SEED_COST = {"WHEAT": 10, "CARROT": 20, "TOMATO": 50, "STRAWBERRY": 100, "MELON": 80}
-
-# Base (reference) sale price per product.
-BASE = {"WHEAT": 25, "CARROT": 35, "TOMATO": 60, "STRAWBERRY": 120, "MELON": 250,
-        "EGG": 50, "MILK": 160, "WOOL": 200, "FERTILIZER": 100}
-
-# market-aware-sell branch: caps tuned to above_target (higher above_target = more sensitive to glut = smaller daily batch)
-# MELON 3.60, WOOL 3.20 most sensitive -> cap 20-30; MILK/STRAWBERRY 1.60 -> 40-50; WHEAT 0.20 resistant -> 150
-MARKET_AWARE_ON = os.environ.get("KAGG_MARKET_AWARE", "1") == "1"  # default ON in this branch (set 0 to revert)
-MARKET_AWARE_CAPS = {
-    "MELON": 25,       # 3.60 sq -> crash to $1 with few units
-    "WOOL": 30,        # 3.20 sq
-    "MILK": 40,        # 1.60 linear
-    "STRAWBERRY": 50,  # 1.60 linear
-    "EGG": 80,         # 0.20 log resistant
-    "WHEAT": 150,      # 0.20 log most resistant -> keep large
-    "FERTILIZER": 80,  # 0.40 linear
-    "CARROT": 60,      # 0.70 sqrt moderate
-    "TOMATO": 40,      # 0.60 sqrt
-}
-
-# ============================================================
-# BATCH-2 (P1) ENGINE #2: fertilizer working-stock buyer
-# ============================================================
-# Keeps a working stock of fertilizer in the shed so the planner's
-# strawberry FERTILIZE jobs (ongoing crop: watered+fertilized doubles the
-# scheduled yield 1 -> 2) can actually execute. Today GB collects ~10-15
-# fert/day from animals but SELLS everything above a 2-unit reserve while
-# emitting daily fertilize jobs for ~40+ mature plants - most starve.
-# Ladder evidence (Phase-12 decode): leader-2 APPLIES fert to crops
-# (5-16/day) instead of selling it.
-# Cash priority: this block runs LAST in build_orders - land / seeds /
-# animals / hiring always have first claim on capital. Purchases stop at
-# FERT_BUY_LAST_DAY because later applications cannot pay back within the
-# season.
-#
-# TOGGLE: default OFF = bit-exact baseline/GOLDEN_BASELINE behaviour (the OFF
-# path is guarded by G0 toggle-off parity). Local benchmark arms flip it
-# via KAGG_FERT_BUY_V1=1 WITHOUT any source divergence between arms.
-FERT_BUY_ENGINE_V1 = os.environ.get("KAGG_FERT_BUY_V1", "").strip().lower() in ("1", "true", "on")
-FERT_STOCK_TARGET = 8      # shed units to maintain when engine is ON
-FERT_BUY_CAP_PER_DAY = 6   # max units ordered per day (order-cap safety)
-FERT_BUY_LAST_DAY = 26     # no purchases that cannot pay back in-season
-FERT_BUY_MIN_MONEY = 800   # never buy below this cash level
-FERT_BUY_MAX_PRICE = 130   # skip when market price exceeds this
-
-# ============================================================
-# BATCH-3 (P5): regime-adaptive WOOL release gate
-# ============================================================
-# Signal: obs.town.unlocked_shops (shared, updated by the referee every
-# day-multiple-of-3; drawn WITH replacement from 8 types, cap 8 copies).
-# WOOL has exactly ONE consumer shop type: YARN_STORE. Sweep evidence
-# (tools/out/p5_obs_sweep.json, seeds 1-30 OFF-mode):
-#   yarn==0 worlds (n=9): score avg $74,050 | wool path slides 218(d6) ->
-#     129(d18) -> $1(d22+); our own ~500-unit production floods the market
-#     (elasticity -$0.40/unit above I0) and late shears realize ~$0.
-#   yarn>=1 worlds (n=21): score avg $89,724 | wool rises to ~$243.
-# Gate v1 (evidence-corrected during probe):
-#   * YARN_STORE present  -> HOLD wool to P5_WOOL_HOLD_DAY: in these worlds
-#     drain lifts wool 206 -> ~243 monotonically, so early selling leaves
-#     +$30/unit on ~110 units. Bail: if wool falls >=25% below its season
-#     max on/after day 16 (late-crash insurance, MILK_BAIL pattern), dump.
-#   * YARN_STORE absent   -> keep the day-6 gate: price peaks ~d6 (218) and
-#     the slide is caused by our own flood volume, not timing - early cash
-#     and shed space beat a doomed hold.
-# TOGGLE: default OFF = bit-exact GB; arms flip via KAGG_P5_RELEASE_V1=1.
-P5_RELEASE_V1 = os.environ.get("KAGG_P5_RELEASE_V1", "").strip().lower() in ("1", "true", "on")
-P5_WOOL_KEPT_UNITS = 25
-P5_WOOL_BAIL_FROM_DAY = 16
-P5_WOOL_BAIL_FACTOR = 0.75
-
-# ============================================================
-# BATCH-4 (P4): YARN-gated conditional sheep cap
-# ============================================================
-# WOOL has a single consumer shop type (YARN_STORE - proven in the P5
-# sweep). In yarn-less worlds our own ~500-unit production floods the
-# market to the $1 floor regardless of timing, so sheep #5..#12 produce
-# near-zero-value wool while consuming $500 each plus daily FEED/CARE
-# labor, shed slots and manure-pen tiles.
-#
-# Gate v1 (progressive, decision refreshes each morning):
-#   * YARN_STORE seen            -> full PLAN["SHEEP"] (baseline behaviour)
-#   * still absent on day >= 3   -> sheep target floors at
-#     P4_NO_YARN_SHEEP_TARGET(4). Day 0-2 waves (2+1+1 = exactly 4 sheep)
-#     run BEFORE any shop draw exists, so the floor aligns perfectly with
-#     the pre-information accumulation - nothing changes pre-d3 for anyone.
-#   * late YARN unlock (d6..d24) -> target snaps back to 12 and the
-#     1-sheep/day stream resumes (late sheep still net-positive when a
-#     drainer exists).
-# Side effects (capped worlds only): pens are JIT-built from actual
-# animals_ordered + buffer, so ~6 pasture tiles revert to crops; FEED/
-# CARE labor frees up; feed-wheat purchases drop; manure income drops.
-# TOGGLE: default OFF = bit-exact GB; arms flip via KAGG_P4_SHEEP_CAP_V1=1.
-P4_SHEEP_CAP_V1 = os.environ.get("KAGG_P4_SHEEP_CAP_V1", "").strip().lower() in ("1", "true", "on")
-P4_NO_YARN_SHEEP_TARGET = 4
-
-# ============================================================
-# BATCH-5 (P4-v2): softer floor (v2a) + deadline resume (v2b)
-# ============================================================
-# v1 RED-by-rule diagnosis: (a) floor 4 amputated the manure->
-# FERTILIZER line and CARE labor in some no-yarn worlds (seed 8 lost
-# -$13.8k WITH zero yarn) and (b) late-yarn worlds stayed capped through
-# the cash-rich mid-game, then the 8-sheep post-YARN top-up collided
-# with end-season order/cash pressure (seed 27 lost -$20.3k).
-#
-# v2a: floor rises 4 -> 8. Only sheep #9-#12 are ever skipped, keeping
-#      the manure/CARE economy largely intact in drainless worlds.
-# v2b: from RESUME_DAY(10) the cap lifts entirely even without YARN -
-#      the normal 1/day stream finishes the herd inside the cash-rich
-#      window, so a late YARN unlock finds us already complete and the
-#      end-season collision cannot happen.
-# Arms are mutually exclusive; if several flags are set the first match
-# in the build_orders resolution order wins (documented precedence):
-#   KAGG_P4_SHEEP_CAP_V2  : floor 8 until d9, full resume from d10 (AB)
-#   KAGG_P4_V2A           : floor 8, no self-resume            (A)
-#   KAGG_P4_V2B           : floor 4 until d9, full resume d10+ (B)
-#   KAGG_P4_SHEEP_CAP_V1  : floor 4, no self-resume (batch-4 arm)
-P4_SHEEP_CAP_V2 = os.environ.get("KAGG_P4_SHEEP_CAP_V2", "").strip().lower() in ("1", "true", "on")
-P4_SHEEP_CAP_V2B = os.environ.get("KAGG_P4_V2B", "").strip().lower() in ("1", "true", "on")
-# BATCH-6a PROMOTION: V2A won its GREEN gate (mean $86,355, paired
-# +$1,333, tails thinner than GB) and is now the SHIPPED default. The
-# env var flipped to an opt-OUT: KAGG_P4_V2A=0 restores pristine GB
-# behaviour for parity/replay harnesses.
-_p4v2a_raw = os.environ.get("KAGG_P4_V2A", "1").strip().lower()
-P4_SHEEP_CAP_V2A = _p4v2a_raw not in ("0", "false", "off", "no")
-P4V2_FLOOR = 8
-P4V2_RESUME_DAY = 10
-
-# BATCH-6 (P4-v3): PRICE-ADAPTIVE sheep floor (experimental, default OFF).
-# If no YARN_STORE is visible and the d10-d14 WOOL price is low, cap the
-# herd at 4 (the v1 floor) instead of 8 (the V2A floor). Rationale: in
-# drainless worlds a rock-bottom WOOL price is a *leading* signal that the
-# drainer never arrives; the remaining #9-#12 sheep then only burn cash,
-# feed labor and pen tiles. Worlds with YARN (or WOOL still healthy on the
-# decision window) keep the V2A floor 8. Mutually exclusive with the other
-# P4 arms (checked in coded precedence order below). Default OFF.
-P4_V3_ADAPTIVE = os.environ.get("KAGG_P4_V3_ADAPTIVE", "").strip().lower() in ("1", "true", "on")
-P4V3_QUIET_WINDOW0 = 10
-P4V3_QUIET_WINDOW1 = 14
-# WOOL < this on days 10-14 (no-YARN world) -> drop floor 8 -> 4.
-P4V3_WOOL_THRESHOLD = 60
-
-# ============================================================
-# BATCH-7 (P7): price-adaptive WOOL SELL timing gated on the
-# YARN signal. Independent of the P5 tranche gate; when ON it
-# fully replaces the wool HOLD/SELL logic with a simpler,
-# price-adaptive timing. Mutually exclusive in spirit with P5
-# wool logic (P7 wins, P5 wins otherwise; both OFF == V2A GB).
-#   * YARN present  -> the d22+ premium (~$240) is the high-water
-#     mark of the rising-regime price curve; hold ALL wool until
-#     d22 and dump the full tranche once (late full-tranche). The
-#     P5 probe variant held 25 units at d6 - that missed the d22
-#     premium entirely, leaving ~$840/unit of value on the table.
-#   * YARN absent   -> d15+ glut collapses WOOL to $1-5 (proven by
-#     the P4-v3 yarn probe: WOOL stays 181-200 through d10-14 then
-#     craters only AFTER d15). Liquidate the standard early gate
-#     (V2A's d6) = bit-identical to V2A on the no-yarn side; the
-#     entire expected gain is concentrated in YARN worlds.
-# TOGGLE: default OFF = bit-identical GB (P5 OFF path untouched).
-# Arms flip via KAGG_P7_SELL_V1=1.
-P7_RELEASE_V1 = os.environ.get("KAGG_P7_SELL_V1", "").strip().lower() in ("1", "true", "on")
-P7_WOOL_HOLD_DAY = 22            # YARN world: hold-all until the late premium
-P7_WOOL_EARLY_DAY = SELL_HOLD_DAY["WOOL"]  # 6; no-YARN world: early liquidation
-P7_WOOL_SELL_CAP = 80            # full-shed dump (matches the existing sell_capped cap)
-
-LAND_COSTS = [1000, 2000, 4000]
-LAND_DAYS = [6, 9, 12]
+from src.config import (
+    FERT_BUY_ENGINE_V1, FERT_STOCK_TARGET, FERT_BUY_CAP_PER_DAY,
+    FERT_BUY_LAST_DAY, FERT_BUY_MIN_MONEY, FERT_BUY_MAX_PRICE,
+    P5_RELEASE_V1, P5_WOOL_KEPT_UNITS, P5_WOOL_BAIL_FROM_DAY, P5_WOOL_BAIL_FACTOR,
+    P4_SHEEP_CAP_V1, P4_NO_YARN_SHEEP_TARGET,
+    P4_SHEEP_CAP_V2, P4_SHEEP_CAP_V2B, P4_SHEEP_CAP_V2A, P4V2_FLOOR, P4V2_RESUME_DAY,
+    P4_V3_ADAPTIVE, P4V3_QUIET_WINDOW0, P4V3_QUIET_WINDOW1, P4V3_WOOL_THRESHOLD,
+    P7_RELEASE_V1, P7_WOOL_HOLD_DAY, P7_WOOL_EARLY_DAY, P7_WOOL_SELL_CAP,
+    LAND_COSTS, LAND_DAYS,
+)
 
 
 def _fib(n: int) -> int:
