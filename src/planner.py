@@ -263,6 +263,8 @@ class FarmPlanner:
                      market_ctx: Optional[dict] = None) -> List[tuple]:
         """Build the priority-sorted job queue. Mirrors Agent._collect_jobs."""
         jobs = []
+        _hour = market_ctx.get("hour", 0) if market_ctx else 0
+        _is_final = (day == 29 and _hour >= 14)  # last 10 turns 710-719: deposit only
         # count weeds up front (handles dict kind==WEED and string "WEED")
         _weed_count = 0
         for _r in tiles:
@@ -281,6 +283,8 @@ class FarmPlanner:
         wheat_available = shed.get("WHEAT", 0) > 0 or any(i.get("WHEAT", 0) > 0 for i in invs)
         for y in range(10):
             for x in range(10):
+                if _is_final:
+                    continue  # final 10 turns: skip all farm jobs, only DEPOSIT
                 t = tiles[y][x]
                 if isinstance(t, dict) and "animal" in t:
                     pos = (x, y)
@@ -290,14 +294,14 @@ class FarmPlanner:
                         jobs.append((pos, "CARE", 1))
                     if t.get("fertilizer_available"):
                         jobs.append((pos, "COLLECT_FERTILIZER", 1))
-                    if t.get("yield_units", 0) > 0:
+                    if t.get("yield_units", 0) > 0 and not _is_final:
                         jobs.append((pos, "HARVEST", 2))
                 elif isinstance(t, dict) and t.get("kind") == "PLANT":
                     pos = (x, y)
                     cd = CROP_CONFIG[t["crop"]]
                     age = day - t["planted_day"]
                     ready = t.get("yield_units", 0) > 0 and (cd["is_ongoing"] or age >= cd["first_yield_day"])
-                    if ready:
+                    if ready and not _is_final:
                         jobs.append((pos, "HARVEST", 2))
                     elif not t.get("watered_today"):
                         jobs.append((pos, "WATER", 2))
@@ -323,7 +327,7 @@ class FarmPlanner:
         # so the count below (existing pens of ANY occupancy) is deadlock-free.
         _hour = market_ctx.get("hour", 0) if market_ctx else 0
         _skip_build_day0 = (day == 0 and _hour < 12)
-        if not _skip_build_day0:
+        if not _skip_build_day0 and not _is_final:
             build_target = min(PLAN["COW"] + PLAN["SHEEP"],
                                sum(animals_ordered.get(k, 0) for k in ("COW", "SHEEP")) + PASTURE_BUFFER)
             total_pastures = self._count_structs(tiles, "PASTURE")
@@ -403,9 +407,15 @@ class FarmPlanner:
             depositable = [k for k, v in inv.items() if v > 0 and k not in ("WHEAT", "COW", "SHEEP", "GOOSE")]
             if inv.get("WHEAT", 0) > 6:
                 depositable.append("WHEAT")
-            if depositable:
+            # in final 10 turns, dump everything (including WHEAT reserve) in one DROP
+            if _is_final and any(v > 0 for v in inv.values()):
+                # use DROP priority -1 to outrank everything and empty whole inventory at once
                 near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
-                jobs.append((near, "DEPOSIT", 2, depositable[0], u_idx))
+                jobs.append((near, "DEPOSIT", -1, "__DROP_ALL__", u_idx))
+            elif depositable:
+                near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
+                dep_prio = -1 if _is_final else 2
+                jobs.append((near, "DEPOSIT", dep_prio, depositable[0], u_idx))
         # --- ZoneManager 2×2 rebuild: fixed 4 zones (NW/NE/SW/SE) ---
         try:
             self.zones = ZoneManager._compute_zones([[None]*10 for _ in range(10)], 4)
@@ -486,6 +496,15 @@ class FarmPlanner:
                 pass
         target, op = pick[0], pick[1]
         if op == "DEPOSIT":
+            # final 10 turns: DROP empties whole inventory at once (AGENTS.md: DROP dumps entire inventory)
+            if len(pick) > 3 and pick[3] == "__DROP_ALL__":
+                if pos == list(target) and any(v > 0 for v in inv.values()):
+                    self.unit_task.pop(u_idx, None)
+                    return ["DROP"]
+                if not any(v > 0 for v in inv.values()):
+                    return ["PASS"]
+                self.unit_task.pop(u_idx, None)
+                return self._step(pos, target)
             if pos == list(target) and inv.get(pick[3], 0) > 0:
                 self.unit_task.pop(u_idx, None)
                 return ["PLACE", pick[3], inv[pick[3]]]

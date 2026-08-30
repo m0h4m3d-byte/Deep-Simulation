@@ -301,10 +301,10 @@ class MarketEngine:
                 feed_cap = 4 if animals_now <= 2 else 2 if animals_now < 8 else 3
                 buy("feed", feed_cap, q * wheat_price, ["BUY_PRODUCT", "WHEAT", q], floor=0)
 
-        # no-waste-buying: last_day aligned to LAST_PLAYABLE_DAY(29)-first_yield_day
-        # WHEAT 28->27 (27+2=29), STRAW 22->19 (19+10=29), MELON 13 keeps (13+10=23 safe, 19+10=29 would also safe but keep 13 conservative)
-        seed_plan = {"WHEAT": (PLAN["WHEAT"], 27, 8, 0), "MELON": (PLAN["MELON"], 13, 12 if day == 0 else 6, 0),
-                     "STRAWBERRY": (PLAN["STRAWBERRY"], 19, 10, 3)}
+        # end-of-season waste fix: stop buying early so every seed can be planted+harvested+deposited+sold
+        # WHEAT 27->24 (5d buffer: 24+2=26 +3d harvest/deposit), STRAW 19->14 (14+10=24 first, 14+16=30 last but 3 harvests by 28), MELON 13->10 (10+12=22 +7d buffer)
+        seed_plan = {"WHEAT": (PLAN["WHEAT"], 24, 8, 0), "MELON": (PLAN["MELON"], 10, 12 if day == 0 else 6, 0),
+                     "STRAWBERRY": (PLAN["STRAWBERRY"], 14, 10, 3)}
         for crop, (target, last_day, cap, start_day) in seed_plan.items():
             if day > last_day or day < start_day:
                 continue
