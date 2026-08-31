@@ -51,7 +51,7 @@ Phase 5 (leaderboard-driven efficiency, benchmark-gated):
 from typing import Dict, List, Optional, Set, Tuple
 
 from src.constants import (
-    CROP_CONFIG, SHED_TILES, PASTURE_POS, COOP_POS,
+    CROP_CONFIG, SHED_TILES, COOP_POS,
 )
 from src.economy import PLAN, PASTURE_BUFFER, MarketEngine, ANIMAL_ADVISOR_ON
 from src.config import (
@@ -60,6 +60,7 @@ from src.config import (
     PLANT_TARGET_FULL, PLANT_TARGET_LATE,
     STRAW_LEAD_THRESHOLD, ADVISOR_MIN_DAY,
     LAST_PLAYABLE_DAY,
+    PASTURE_LOCATIONS,
 )
 
 # --- Day gates (were src/strategy.py — logic lives here, numbers live in config.py) ---
@@ -332,11 +333,11 @@ class FarmPlanner:
                                sum(animals_ordered.get(k, 0) for k in ("COW", "SHEEP")) + PASTURE_BUFFER)
             total_pastures = self._count_structs(tiles, "PASTURE")
             # Phase 4 fix: baseline's cap counted only EXISTING pastures and never
-            # incremented while emitting, so every PASTURE_POS got a build job
+            # incremented while emitting, so every pasture location got a build job
             # (up to 28 pastures!) - ~10 tiles of permanent crop capacity burned.
             # pasture_jobs = existing + queued builds, so the cap actually binds.
             pasture_jobs = total_pastures
-            for p in PASTURE_POS:
+            for p in PASTURE_LOCATIONS:
                 t = tiles[p[1]][p[0]]
                 if t is None and pasture_jobs < build_target:
                     jobs.append((p, "BUILD_PASTURE", 2))

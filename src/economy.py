@@ -72,7 +72,7 @@ RESERVE = 15
 # shed was otherwise empty (everything else sold from d6-8). Lever CLOSED
 # until shed capacity stops being the binding constraint.
 #
-# Phase 9 (2026-08): Phase 9 (pyramidal pens, constants.PASTURE_POS)
+# Phase 9 (2026-08): Phase 9 (pyramidal pens, pasture locations)
 # adopted - NINE 83-game runs: $86,266 / $84,703 / $84,156 / $84,291 /
 # $87,948 / $87,857 / $82,519 / $83,717 / $85,454 (9-run combined $85,212,
 # 100% wins x9, median avg $86,941). Confirmed structural gains vs earlier:

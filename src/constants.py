@@ -156,15 +156,4 @@ DEFAULT_MAX_MARKET_ORDERS = 10
 # ============================================================
 SHED_TILES = [(4, 4), (5, 4), (4, 5), (5, 5)]
 
-# Phase 9 (pyramidal pens, 2026-08): the herd's last 4 pens moved from the
-# far Q2 ring (5,1)/(6,0)/(5,0)/(6,1), distance 3.5-4.5 from the shed, to
-# the nearest unlocked tiles (5,3)/(6,4)/(3,5)/(6,5), distance 1.58 -
-# shorter FEED/CARE/COLLECT/HARVEST travel for the late-wave animals
-# (pens 21+ are only needed after day 16, so Q2/Q3/Q4 are unlocked).
-# The proven first-20 Q1 pens (day-0-5 constraint) are untouched.
-PASTURE_POS = [(3, 3), (4, 3), (3, 4), (2, 3), (2, 4), (3, 2), (4, 2), (2, 2),
-               (1, 3), (1, 4), (2, 1), (3, 1), (1, 2), (0, 3), (1, 1), (0, 2),
-               (2, 0), (4, 1), (0, 1), (1, 0), (5, 3), (6, 4), (3, 5), (6, 5),
-               (5, 2), (4, 0), (0, 4), (1, 5)]
-
 COOP_POS = [(0, 0)]
