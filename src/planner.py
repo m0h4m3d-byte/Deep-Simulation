@@ -255,9 +255,9 @@ class FarmPlanner:
         return sum(1 for row in tiles for t in row
                    if isinstance(t, dict) and t.get("kind") == kind)
 
-    # weed-priority experiment: when weeds accumulate, DIG jumps above PLANT/WATER
-    WEED_PRIORITY_THRESHOLD = 15  # j5rb 15-20 kama tlb, default 15
-    WEED_PRIORITY_PRIO = 1  # foq zra3a (2) w ta7t FEED(0)
+    # weed-priority 2 max
+    WEED_PRIORITY_THRESHOLD = 2
+    WEED_PRIORITY_PRIO = 1
 
     def collect_jobs(self, day: int, tiles, shed, seeds, invs,
                      animals_ordered: Dict[str, int],
@@ -265,7 +265,7 @@ class FarmPlanner:
         """Build the priority-sorted job queue. Mirrors Agent._collect_jobs."""
         jobs = []
         _hour = market_ctx.get("hour", 0) if market_ctx else 0
-        _is_final = (day == 29 and _hour >= 14)  # last 10 turns 710-719: deposit only
+        _is_final = (day >= 28)  # last 48 turns for 0 waste
         # count weeds up front (handles dict kind==WEED and string "WEED")
         _weed_count = 0
         for _r in tiles:
@@ -296,14 +296,16 @@ class FarmPlanner:
                     if t.get("fertilizer_available"):
                         jobs.append((pos, "COLLECT_FERTILIZER", 1))
                     if t.get("yield_units", 0) > 0 and not _is_final:
-                        jobs.append((pos, "HARVEST", 2))
+                        h_prio = 1 if day >= 27 else 2
+                        jobs.append((pos, "HARVEST", h_prio))
                 elif isinstance(t, dict) and t.get("kind") == "PLANT":
                     pos = (x, y)
                     cd = CROP_CONFIG[t["crop"]]
                     age = day - t["planted_day"]
                     ready = t.get("yield_units", 0) > 0 and (cd["is_ongoing"] or age >= cd["first_yield_day"])
                     if ready and not _is_final:
-                        jobs.append((pos, "HARVEST", 2))
+                        h_prio = 1 if day >= 27 else 2
+                        jobs.append((pos, "HARVEST", h_prio))
                     elif not t.get("watered_today"):
                         jobs.append((pos, "WATER", 2))
                     if t.get("fertilized_until_day", -1) < day:
@@ -463,14 +465,14 @@ class FarmPlanner:
                 near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
                 dep_prio = -1 if _is_final else 2
                 jobs.append((near, "DEPOSIT", dep_prio, depositable[0], u_idx))
-        # --- ZoneManager 2×2 rebuild: fixed 4 zones (NW/NE/SW/SE) ---
+        # --- ZoneManager 3 zones per quadrant ---
         try:
-            self.zones = ZoneManager._compute_zones([[None]*10 for _ in range(10)], 4)
-            self._zone_mgr = ZoneManager(tiles, 4, plant_target=p_target)
+            self.zones = [(0, 0, 4, 4), (5, 0, 9, 4), (0, 5, 4, 9)]
+            self._zone_mgr = ZoneManager(tiles, 3, plant_target=p_target)
             self._zone_mgr.zones = self.zones
             self._zone_mgr.helped_today = self.zone_helped
         except Exception:
-            self.zones = [(0, 0, 4, 4), (5, 0, 9, 4), (0, 5, 4, 9), (5, 5, 9, 9)]
+            self.zones = [(0, 0, 4, 4), (5, 0, 9, 4), (0, 5, 4, 9)]
         jobs.sort(key=lambda j: j[2])
         return jobs
 
