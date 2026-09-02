@@ -532,7 +532,19 @@ class FarmPlanner:
                 prio -= 100
             if j[1] == task_op:
                 prio -= 30
-            if pick is None or prio < pick_prio or (prio == pick_prio and self._prefer_tie(j, pick, pos)):
+            # spatial WATER clustering: prefer WATER over PLANT when prio equal and distance similar (no cost to other tasks)
+            prefer = False
+            if pick is not None and prio == pick_prio:
+                if j[1] == "WATER" and pick[1] == "PLANT":
+                    prefer = True
+                elif j[1] == "WATER" and pick[1] == "WATER":
+                    prefer = self._prefer_tie(j, pick, pos)
+                else:
+                    prefer = self._prefer_tie(j, pick, pos)
+                if prefer or self._prefer_tie(j, pick, pos):
+                    pick = j
+                    pick_prio = prio
+            elif pick is None or prio < pick_prio:
                 pick = j
                 pick_prio = prio
         if pick is None:
