@@ -255,8 +255,8 @@ class FarmPlanner:
         return sum(1 for row in tiles for t in row
                    if isinstance(t, dict) and t.get("kind") == kind)
 
-    # weed-priority 2 max
-    WEED_PRIORITY_THRESHOLD = 2
+    # weed-priority 15 as Crop Dusta
+    WEED_PRIORITY_THRESHOLD = 15
     WEED_PRIORITY_PRIO = 1
 
     def collect_jobs(self, day: int, tiles, shed, seeds, invs,
@@ -265,7 +265,7 @@ class FarmPlanner:
         """Build the priority-sorted job queue. Mirrors Agent._collect_jobs."""
         jobs = []
         _hour = market_ctx.get("hour", 0) if market_ctx else 0
-        _is_final = (day >= 28)  # last 48 turns for 0 waste
+        _is_final = (day == 29 and _hour >= 14)  # Crop Dusta: last 10 only
         # count weeds up front (handles dict kind==WEED and string "WEED")
         _weed_count = 0
         for _r in tiles:
@@ -465,14 +465,12 @@ class FarmPlanner:
                 near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
                 dep_prio = -1 if _is_final else 2
                 jobs.append((near, "DEPOSIT", dep_prio, depositable[0], u_idx))
-        # --- ZoneManager 3 zones per quadrant ---
+        # --- No zone: copy Crop Dusta row-major, no SE crossing ---
         try:
-            self.zones = [(0, 0, 4, 4), (5, 0, 9, 4), (0, 5, 4, 9)]
-            self._zone_mgr = ZoneManager(tiles, 3, plant_target=p_target)
-            self._zone_mgr.zones = self.zones
-            self._zone_mgr.helped_today = self.zone_helped
+            self.zones = []
+            self._zone_mgr = None
         except Exception:
-            self.zones = [(0, 0, 4, 4), (5, 0, 9, 4), (0, 5, 4, 9)]
+            self.zones = []
         jobs.sort(key=lambda j: j[2])
         return jobs
 

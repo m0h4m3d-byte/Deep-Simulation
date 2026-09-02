@@ -301,8 +301,8 @@ class MarketEngine:
                 feed_cap = 4 if animals_now <= 2 else 2 if animals_now < 8 else 3
                 buy("feed", feed_cap, q * wheat_price, ["BUY_PRODUCT", "WHEAT", q], floor=0)
 
-        # day1 13 + end-season 0: WHEAT cap 13 day0, last 22, MELON 8
-        seed_plan = {"WHEAT": (PLAN["WHEAT"], 22, 13 if day == 0 else 8, 0), "MELON": (PLAN["MELON"], 8, 12 if day == 0 else 6, 0),
+        # Crop Dusta: WHEAT 24 MELON 10 STRAW 14 as base
+        seed_plan = {"WHEAT": (PLAN["WHEAT"], 24, 8, 0), "MELON": (PLAN["MELON"], 10, 12 if day == 0 else 6, 0),
                      "STRAWBERRY": (PLAN["STRAWBERRY"], 14, 10, 3)}
         for crop, (target, last_day, cap, start_day) in seed_plan.items():
             if day > last_day or day < start_day:
