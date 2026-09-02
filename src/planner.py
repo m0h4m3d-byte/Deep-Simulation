@@ -307,8 +307,8 @@ class FarmPlanner:
                     elif not t.get("watered_today"):
                         jobs.append((pos, "WATER", 2))
                     if t.get("fertilized_until_day", -1) < day:
-                        if cd["is_ongoing"] and age >= cd["first_yield_day"]:
-                            jobs.append((pos, "FERTILIZE", 5))
+                        if t["crop"] == "STRAWBERRY" and age >= cd["first_yield_day"]:
+                            jobs.append((pos, "FERTILIZE", 2))
                 elif isinstance(t, dict) and t.get("kind") == "WEED":
                     # weed-priority branch: when _weed_count >=15, DIG@1 foq zra3a
                     # (Phase 1 DIG@1 crash was with unconditional prio 1; here it's
