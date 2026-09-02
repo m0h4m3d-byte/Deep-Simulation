@@ -327,15 +327,31 @@ class FarmPlanner:
         # unplaced (pens > placed and pens = ordered+2 > animals >= placed),
         # so the count below (existing pens of ANY occupancy) is deadlock-free.
         _hour = market_ctx.get("hour", 0) if market_ctx else 0
+        FIXED_PASTURES_5 = [(4,2), (3,3), (4,3), (3,4), (4,4)]
+        if day <= 2 and not _is_final:
+            total_pastures = self._count_structs(tiles, "PASTURE")
+            pasture_jobs = total_pastures
+            for p in FIXED_PASTURES_5:
+                t = tiles[p[1]][p[0]]
+                if t is None and pasture_jobs < 5:
+                    jobs.append((p, "BUILD_PASTURE", 2))
+                    pasture_jobs += 1
+                elif isinstance(t, dict) and t.get("kind") == "PASTURE" and "animal" not in t:
+                    un_cow = MarketEngine._unplaced_animal(invs, shed, "COW")
+                    un_sheep = MarketEngine._unplaced_animal(invs, shed, "SHEEP")
+                    crash = bool(market_ctx and market_ctx.get("milk_crash"))
+                    if ANIMAL_ADVISOR_ON and crash and un_sheep > un_cow and un_sheep > 0:
+                        jobs.append((p, "PLACE", 2, "SHEEP"))
+                    else:
+                        for a in ("COW", "SHEEP"):
+                            if MarketEngine._unplaced_animal(invs, shed, a) > 0:
+                                jobs.append((p, "PLACE", 2, a))
+                                break
         _skip_build_day0 = (day == 0 and _hour < 12)
-        if not _skip_build_day0 and not _is_final:
+        if not _skip_build_day0 and not _is_final and day > 2:
             build_target = min(PLAN["COW"] + PLAN["SHEEP"],
                                sum(animals_ordered.get(k, 0) for k in ("COW", "SHEEP")) + PASTURE_BUFFER)
             total_pastures = self._count_structs(tiles, "PASTURE")
-            # Phase 4 fix: baseline's cap counted only EXISTING pastures and never
-            # incremented while emitting, so every pasture location got a build job
-            # (up to 28 pastures!) - ~10 tiles of permanent crop capacity burned.
-            # pasture_jobs = existing + queued builds, so the cap actually binds.
             pasture_jobs = total_pastures
             for p in PASTURE_LOCATIONS:
                 t = tiles[p[1]][p[0]]
@@ -380,29 +396,59 @@ class FarmPlanner:
         plant_count = sum(1 for row in tiles for t in row
                           if isinstance(t, dict) and t.get("kind") == "PLANT")
         p_target = plant_target(day)
-        for y in range(10):
-            for x in range(10):
+        # Fixed NW 20+5 for high efficiency (weeds low, escapes zero) - verified 85385
+        FIXED_NW_20 = [
+            (0,0,"MELON"), (1,0,"MELON"), (2,0,"MELON"), (3,0,"MELON"), (4,0,"MELON"),
+            (0,1,"WHEAT"), (1,1,"WHEAT"), (2,1,"WHEAT"), (3,1,"WHEAT"), (4,1,"WHEAT"),
+            (0,2,"WHEAT"), (1,2,"WHEAT"), (2,2,"WHEAT"), (3,2,"WHEAT"),
+            (0,3,"WHEAT"), (1,3,"WHEAT"), (2,3,"WHEAT"),
+            (0,4,"STRAWBERRY"), (1,4,"STRAWBERRY"), (2,4,"WHEAT"),
+        ]
+        FIXED_NW_PASTURES_5 = [(4,2), (3,3), (4,3), (3,4), (4,4)]
+        # Use fixed NW for days 0-2, sorted by distance to shed for minimal moves
+        if day <= 2:
+            all_nw = [(x,y,c) for x,y,c in FIXED_NW_20] + [(x,y,"PASTURE") for x,y in FIXED_NW_PASTURES_5]
+            all_nw_sorted = sorted(all_nw, key=lambda pp: min(abs(pp[0]-sx)+abs(pp[1]-sy) for sx,sy in SHED_TILES))
+            for x, y, fixed_crop in all_nw_sorted:
                 if (x, y) in shed_tiles or tiles[y][x] == "LOCKED":
                     continue
-                if tiles[y][x] is None:
-                    if plant_count >= p_target:
-                        break
-                    for crop in crop_order:
-                        if not active.get(crop) or seeds.get(crop, 0) <= 0:
-                            continue
-                        if crop == "MELON" and melon_on_field >= melon_cap:
-                            continue
-                        # Maturity Tracker: skip crops whose first yield lands
-                        # after the last playable day (day 29) - e.g. wheat
-                        # planted on day 28 or strawberry planted after day 19
-                        # can never be harvested, wasting seeds, tiles and labor.
-                        if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
-                            continue
-                        jobs.append(((x, y), "PLANT", 2, crop))
-                        plant_count += 1
-                        if crop == "MELON":
-                            melon_on_field += 1
-                        break
+                if fixed_crop == "PASTURE":
+                    continue
+                if tiles[y][x] is not None:
+                    continue
+                if plant_count >= p_target:
+                    break
+                crop = fixed_crop
+                if not active.get(crop) or seeds.get(crop, 0) <= 0:
+                    continue
+                if crop == "MELON" and melon_on_field >= melon_cap:
+                    continue
+                if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
+                    continue
+                jobs.append(((x, y), "PLANT", 2, crop))
+                plant_count += 1
+                if crop == "MELON":
+                    melon_on_field += 1
+        else:
+            for y in range(10):
+                for x in range(10):
+                    if (x, y) in shed_tiles or tiles[y][x] == "LOCKED":
+                        continue
+                    if tiles[y][x] is None:
+                        if plant_count >= p_target:
+                            break
+                        for crop in crop_order:
+                            if not active.get(crop) or seeds.get(crop, 0) <= 0:
+                                continue
+                            if crop == "MELON" and melon_on_field >= melon_cap:
+                                continue
+                            if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
+                                continue
+                            jobs.append(((x, y), "PLANT", 2, crop))
+                            plant_count += 1
+                            if crop == "MELON":
+                                melon_on_field += 1
+                            break
 
         for u_idx, inv in enumerate(invs):
             depositable = [k for k, v in inv.items() if v > 0 and k not in ("WHEAT", "COW", "SHEEP", "GOOSE")]
