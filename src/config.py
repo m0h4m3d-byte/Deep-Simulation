@@ -10,7 +10,7 @@ To change a value, edit it HERE ONLY. No hidden env var can override it.
 # ============================================================
 # Core economy — frozen effective values (were KAGG_* defaults)
 # ============================================================
-PLAN = {"COW": 6, "SHEEP": 3, "GOOSE": 0, "MELON": 12, "STRAWBERRY": 20, "WHEAT": 15}
+PLAN = {"COW": 10, "SHEEP": 5, "GOOSE": 0, "MELON": 12, "STRAWBERRY": 20, "WHEAT": 15}
 
 LAND_COSTS = [1000, 2000, 4000]
 LAND_DAYS = [6, 9, 12]
@@ -59,13 +59,17 @@ ANIMAL_ADVISOR_MIN_DAY = 10
 MILK_TREND_DROP = 0.75
 
 # ============================================================
-# Board layout — single source for pastures
+# Board layout — single source for pastures — 15 central contiguous (5 per quad)
+# NW(5) NE(5) SW(5) all 1-2 steps from shed, no plant gap inside block
 # ============================================================
 SHED_TILES = [(4, 4), (5, 4), (4, 5), (5, 5)]
-PASTURE_LOCATIONS = [(3, 3), (4, 3), (3, 4), (2, 3), (2, 4), (3, 2), (4, 2), (2, 2),
-                     (1, 3), (1, 4), (2, 1), (3, 1), (1, 2), (0, 3), (1, 1), (0, 2),
-                     (2, 0), (4, 1), (0, 1), (1, 0), (5, 3), (6, 4), (3, 5), (6, 5),
-                     (5, 2), (4, 0), (0, 4), (1, 5)]
+# Central contiguous clusters:
+# NW: (4,2)-(3,3)-(4,3)-(3,4)-(4,4)  NE: (5,2)-(5,3)-(6,3)-(5,4)-(6,4)  SW: (2,5)-(3,5)-(4,5)-(3,6)-(4,6)
+PASTURE_LOCATIONS = [
+    (4, 3), (3, 4), (4, 4), (3, 3), (4, 2),  # NW 5 - closest to shed first
+    (5, 4), (5, 3), (6, 4), (6, 3), (5, 2),  # NE 5
+    (4, 5), (3, 5), (3, 6), (4, 6), (2, 5),  # SW 5
+]
 COOP_POS = [(0, 0)]
 
 CROP_CONFIG = {
@@ -94,7 +98,7 @@ WOOL_SELL_DAY = 6
 EGG_SELL_DAY = 16
 LIQUIDATE_DAY = 27
 
-PLANT_TARGET_FULL = 55
+PLANT_TARGET_FULL = 60
 PLANT_TARGET_LATE = 30
 PLANT_TARGET_SWITCH_DAY = 22
 LAST_PLAYABLE_DAY = 29
