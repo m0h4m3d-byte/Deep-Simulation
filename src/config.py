@@ -154,11 +154,4 @@ P7_WOOL_HOLD_DAY = 22
 P7_WOOL_EARLY_DAY = 0  # == SELL_HOLD_DAY["WOOL"]
 P7_WOOL_SELL_CAP = 80
 
-# Legacy aliases kept for import compatibility (planner/tests may import these)
-FERT_BUY_ON = FERT_BUY_ENGINE_V1
-P5_WOOL_ON = P5_RELEASE_V1
-P4_V2_ON = P4_SHEEP_CAP_V2
-P4_V2B_ON = P4_SHEEP_CAP_V2B
-P5_V3_ADAPTIVE = P4_V3_ADAPTIVE
-P7_WOOL_ON = P7_RELEASE_V1
-FERT_STOCK_TARGET_ALIAS = 2  # OFF-path reserve used in tests
+

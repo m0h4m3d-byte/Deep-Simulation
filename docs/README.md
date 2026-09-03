@@ -40,7 +40,7 @@ Each Farmer / Farm Hand can be given an action every turn. Farmer/Farm Hand CAN 
 
 #### Movement
 
-- NORTH, SOUTH, EAST, WEST — Move one cell in that direction. Moves off the edge of the board are no-ops. Locked tiles are passable: a unit may move onto and across unbought quadrants, but tile actions (`PLANT`, `WATER`, `BUILD_*`, etc.) all no-op on a locked tile and consume nothing.
+- NORTH, SOUTH, EAST, WEST — Move one cell in that direction. Moves off the edge of the board are no-ops. Locked tiles are passable: a unit may move onto and across unbought quadrants, but tile actions (`PLANT`, `WATER`, `BUILD_*`, etc.) all no-op on a locked tile and consume nothing. The exception is the shed actions `PICKUP`, `DROP`, and `PLACE`-into-shed, which work from any shed-access tile even while that tile is locked — they use the tile only as a standing position and never change it.
 
 #### Shed
 
@@ -146,7 +146,7 @@ Each player has their own farm with a set number of squares. Players are unable 
 - Farmer and hired farm hands drop their inventory at the end of the day in the shed (if there is room)  
 - Limited to 100 items, excluding seeds. Once the shed is full, any further items added (via `PLACE` mid-day or end-of-day inventory drop) are discarded — there is no overflow holding area, so stockpiling on farmer/hand inventories does not bypass the cap.
 
-The shed sits at the center of the board and is not a tile — it never appears in the `tiles` array, whose only values are `None`, `"LOCKED"`, and structure dicts. "Orthogonally adjacent to the shed" means standing on one of the four center tiles, `(half-1, half-1)`, `(half, half-1)`, `(half-1, half)`, `(half, half)` for `half = boardSize // 2`. At the default `boardSize = 10` those are `(4,4)`, `(5,4)`, `(4,5)`, and `(5,5)`, one in each quadrant.
+The shed sits at the center of the board and is not a tile — it never appears in the `tiles` array, whose only values are `None`, `"LOCKED"`, and structure dicts. "Orthogonally adjacent to the shed" means standing on one of the four center tiles, `(half-1, half-1)`, `(half, half-1)`, `(half-1, half)`, `(half, half)` for `half = boardSize // 2`. At the default `boardSize = 10` those are `(4,4)`, `(5,4)`, `(4,5)`, and `(5,5)`, one in each quadrant. Since only NW starts unlocked, three of those four tiles begin locked; the shed is reachable from all of them regardless, because the shed itself is never locked.
 
 ### Farmer/Farm Hand
 
@@ -166,11 +166,11 @@ The shed sits at the center of the board and is not a tile — it never appears 
 
 ### Town Buildings
 
-As the season progresses, new shops unlock at regular intervals (every `townShopUnlockInterval` days, default 3). Each unlock is randomly selected from the shops that have not yet been added; once unlocked, a shop stays active for the rest of the game. Total demand grows monotonically as more shops unlock.
+As the season progresses, new shops unlock at regular intervals (every `townShopUnlockInterval` days, default 3). Each unlock is drawn uniformly at random **with replacement** from the full shop table, so the same shop can unlock more than once — a season might end up with three bakeries and no yarn store. Once unlocked, a shop stays active for the rest of the game, and unlocking stops after 8 total instances. Total demand grows monotonically as more shops unlock.
 
-Each unlocked shop consumes one of every product it demands every `townShopSellInterval` turns (default 4). So with the default interval, a shop demanding wheat removes 6 wheat from the market per day. Single-product shops consume 2x.
+Each unlocked shop *instance* consumes one of every product it demands every `townShopSellInterval` turns (default 4). So with the default interval, a shop demanding wheat removes 6 wheat from the market per day, and two copies of that shop remove 12. Single-product shops consume 2x.
 
-In addition, the town center consumes one of every product (excluding fertilizer) every `townCenterSellInterval` turns (default 12). After day 10 this is increased to 2 of each, and after day 20 it is increased to 4 of each.
+In addition, the town center consumes one of every product (excluding fertilizer) every `townCenterSellInterval` turns (default 24, i.e. once per day). This rate is flat for the whole season — it does not ramp.
 
 | Shop Type | Increases Demand For |
 | :---- | :---- |
@@ -210,23 +210,33 @@ price(inv) = base + sign · amp · f(|inv − I0|)
   sign = +1  if inv < I0   (scarcity → price up)
   sign = −1  if inv > I0   (glut    → price down)
   amp  = target · base / f(T)        (derived; not stored)
-  f    ∈ { linear, sq, sqrt, log, log10 }   (log uses ln(1+x), so f(0)=0)
+  f    ∈ { linear, sq, sqrt, log, log10, hinge }   (log uses ln(1+x), so f(0)=0)
 ```
 
 Floored at `$1` and rounded to the nearest dollar.
 
+`hinge` is the one shape that depends on `T` rather than on `x` alone: with `u = x / T` it evaluates to `u + 8 · max(0, u − 1)²`. Below `T` it is linear in `u`; above `T` the quadratic term takes over and the price climbs steeply. Since `f(T) = 1` by construction, `target` keeps its usual meaning.
+
 `T` is the production capacity of a single 5×5 field over a 24-day window at optimal watering with no fertilizer (animal totals are pre-discounted by 30% to account for wheat-feed overhead, and allow one day to build the coop or pasture). The 24-day window is a calibration horizon, not the 30-day season length. It is shorter on purpose: the opening days are setup-heavy and yield little.
 
-`target` says "moving `T` units past `I0` shifts the price by `target × base`." Picking different `f` and `target` on each side lets resources with similar production profiles play very differently strategically — wheat panics on scarcity but absorbs gluts, carrot is the opposite; melon barely reacts to scarcity but crashes hard on overproduction; wool mirrors melon at a smaller scale. Premium resources (base > $100: strawberry, melon, milk, wool) use `above_target > 1`, so even modest gluts drive them straight to the $1 floor — bundling and timing sales matters more for these than for staples.
+`target` says "moving `T` units past `I0` shifts the price by `target × base`." Picking different `f` and `target` on each side lets resources with similar production profiles play very differently strategically — wheat panics on scarcity but absorbs gluts; melon barely reacts to scarcity but crashes hard on overproduction; wool mirrors melon at a smaller scale. Premium resources (base > $100: strawberry, melon, milk, wool) use `above_target > 1`, so even modest gluts drive them straight to the $1 floor — bundling and timing sales matters more for these than for staples.
+
+Carrot, tomato and egg use `hinge` on the scarcity side, so their prices stay near base under ordinary demand and rise sharply once demand runs past `T`. The town shops that consume them are listed in `unlocked_shops`.
+
+- **Carrot** — `hinge` at `below_target` 1.00. Consumed by pet cafes (single-product, so each consumes double) and farmers markets.
+- **Tomato** — `hinge` at `below_target` 0.40. Consumed by pizza shops and farmers markets.
+- **Egg** — `hinge` at `below_target` 0.40. Consumed by bakeries and brunch spots.
+
+Tomato and egg keep the `below_target` of the `linear` curves they replaced. Because `linear`'s amplitude already normalises to `x / T`, which is exactly `hinge`'s below-knee branch, their prices from `I0` down to `I0 − T` are unchanged; the curves differ only past the knee.
 
 | Resource | Base | I0 | T | Below func | Below target | Above func | Above target | P(I0−T) | P(I0+T) | P(I0+2T) |
 | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
 | **Wheat** | 25 | 10,000 | 400 | sqrt | 0.80 | log | 0.20 | $45 | $20 | $19 |
-| **Carrot** | 35 | 10,000 | 450 | log | 0.20 | sqrt | 0.70 | $42 | $10 | $1 |
-| **Tomato** | 60 | 10,000 | 200 | linear | 0.40 | sqrt | 0.60 | $84 | $24 | $9 |
+| **Carrot** | 35 | 10,000 | 450 | hinge | 1.00 | sqrt | 0.70 | $70 | $10 | $1 |
+| **Tomato** | 60 | 10,000 | 200 | hinge | 0.40 | sqrt | 0.60 | $84 | $24 | $9 |
 | **Strawberry** | 120 | 10,000 | 100 | sqrt | 0.70 | linear | 1.60 | $204 | $1 | $1 |
 | **Melon** | 250 | 10,000 | 300 | log | 0.20 | sq | 3.60 | $300 | $1 | $1 |
-| **Egg** | 50 | 10,000 | 332 | linear | 0.40 | log | 0.20 | $70 | $40 | $39 |
+| **Egg** | 50 | 10,000 | 332 | hinge | 0.40 | log | 0.20 | $70 | $40 | $39 |
 | **Milk** | 160 | 10,000 | 122 | sqrt | 0.60 | linear | 1.60 | $256 | $1 | $1 |
 | **Wool** | 200 | 10,000 | 105 | log | 0.20 | sq | 3.20 | $240 | $1 | $1 |
 | **Fertilizer** | 100 | 10,000 | 200 | linear | 0.40 | linear | 0.40 | $140 | $60 | $20 |
@@ -268,7 +278,7 @@ The top-level observation passed to each agent:
     "prices":    { "WHEAT": int, "CARROT": int, ... },
   },
   "town": {                # shared
-    "unlocked_shops": ["BAKERY", ...],
+    "unlocked_shops": ["BAKERY", "BAKERY", ...],   # may repeat; each entry consumes independently
   },
   "private": {             # this player only; opponent's private state is not visible
     "shed":        { "WHEAT": int, "GOOSE": int, "FERTILIZER": int, ... },
@@ -355,8 +365,8 @@ Per-crop seed costs and per-product base prices are not configurable; they are d
 | turnsPerDay | 24 | Number of turns that make up one in-game day |
 | shedCapacity | 100 | Max non-seed items the shed can hold; overflow at end-of-day drop is discarded |
 | weedSpawnChance | 0.005 | Per-tile probability of a weed spawning on an empty unlocked tile during end-of-day refresh |
-| townShopUnlockInterval | 3 | Days between successive town shop unlocks |
-| townShopSellInterval | 4 | Turns between consumption ticks by every unlocked town shop |
-| townCenterSellInterval | 12 | Turns between consumption ticks by the town center |
+| townShopUnlockInterval | 3 | Days between successive town shop unlocks (drawn with replacement, capped at 8 instances) |
+| townShopSellInterval | 4 | Turns between consumption ticks by every unlocked town shop instance |
+| townCenterSellInterval | 24 | Turns between consumption ticks by the town center (flat rate, once per day) |
 | seed | null | Optional input seed for deterministic episode generation; cleared from config after read so it stays out of agent observations |
 

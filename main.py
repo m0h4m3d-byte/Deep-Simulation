@@ -4,13 +4,13 @@ main.py - Kaggriculture agent: thin wiring layer over the modular port.
 Production agent modules:
     src/constants.py - game constants + board layout
     src/economy.py   - MarketEngine (all market orders) + tunables
-    src/strategy.py  - day-phase gates
+    src/config.py    - all tunables (single source of truth)
     src/planner.py   - FarmPlanner (job queue + per-unit dispatch)
 
 Equivalence with the proven baseline behavior is enforced at runtime by the
-parity suites in tests/ (frozen oracle: tests/monolith_ref.py):
+parity suites (frozen oracle):
     market, strategy, navigation, and the full-pipeline planner replay.
-Any drift of the modules vs the oracle fails those tests loudly.
+Any drift of the modules vs the oracle fails loudly.
 
 Kaggle packaging: a single-file submission needs this module's logic
 bundled with its src/ package (see docs/AGENTS.md).
@@ -59,7 +59,7 @@ class Agent:
         private = obs["private"]
         market = obs["market"]
         money = me["money"]
-        prices = market["prices"]
+        prices = market.get("prices", {})
         shed = private["shed"]
         seeds = private["seeds"]
         tiles = me["tiles"]
@@ -72,7 +72,7 @@ class Agent:
             "day": day,
             "hour": self.hour,
             "prices": prices,
-            "inventory": market["inventory"],
+            "inventory": market.get("inventory", {}),
             "shops": list((obs.get("town") or {}).get("unlocked_shops") or []),
             "milk_crash": getattr(self.market, "milk_crash_active", False),
         }

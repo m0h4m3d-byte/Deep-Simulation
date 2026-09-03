@@ -1,4 +1,0 @@
-v20: merge early-warning indicator + cow cap 6 → 78% local winrate (25/32)
-- Early milk crash indicator: rate-of-change over 3-4 days, 150 guard, tested alone 66%
-- Hard cap 6 cows: kshitiz crash worlds 5W-3L, ladder 66%→69%
-- Combined: 25/32 (78%) on ladder_bench 8x4 — synergistic

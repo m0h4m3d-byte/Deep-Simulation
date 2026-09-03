@@ -14,9 +14,6 @@ Usage:
 """
 
 from src.market_model import MarketModel, TownDemand
-from kaggle_environments.envs.kaggriculture import kaggriculture as K_CROPS_HOST
-
-K_CROPS = K_CROPS_HOST.CROPS
 
 # Products we may strategically hold back (perishables excluded).
 HOLDABLE = {"MILK", "WOOL", "WHEAT", "CARROT", "EGG", "TOMATO", "STRAWBERRY", "MELON", "FERTILIZER"}
@@ -30,13 +27,21 @@ CROP_TRANCHE = {"WHEAT": 60, "CARROT": 30, "TOMATO": 15,
                 "STRAWBERRY": 15, "MELON": 30}
 
 
+def _get_crops():
+    try:
+        from kaggle_environments.envs.kaggriculture import kaggriculture as K_CROPS_HOST
+        return K_CROPS_HOST.CROPS
+    except Exception:
+        return {}
+
+
 def project_harvest_prices(market_ctx):
     """{crop: projected price at its typical harvest day} for planting today."""
     day = market_ctx["day"]
     mm = MarketModel(market_ctx["inventory"],
                      town=TownDemand(market_ctx.get("shops") or [], day))
     out = {}
-    for crop, cd in K_CROPS.items():
+    for crop, cd in _get_crops().items():
         h = day + cd["max_yield_day"]
         if h <= 29:
             out[crop] = mm.projected_price(crop, h - day)
@@ -56,7 +61,9 @@ def crop_ranking_from_ctx(market_ctx):
                      town=TownDemand(market_ctx.get("shops") or [], day))
     scored = []
     for crop in ("MELON", "STRAWBERRY", "WHEAT", "CARROT", "TOMATO"):
-        cd = K_CROPS[crop]
+        cd = _get_crops().get(crop)
+        if cd is None:
+            continue
         harvest_day = day + cd["max_yield_day"]
         if harvest_day > 29 or (day + cd["first_yield_day"]) > 29:
             scored.append((-10 ** 9, crop))

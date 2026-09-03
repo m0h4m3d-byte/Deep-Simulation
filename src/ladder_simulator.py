@@ -109,37 +109,7 @@ if not getattr(K, "_patched_for_N", False):
     K._process_market = _patched_process_market
     K._patched_for_N = True
 
-# ----------------------------------------------------------------------
-# Speedup patch: skip LOCKED/None tiles early in hot loops (72k tile
-# checks per episode). No logic change — just fast-path the common case.
-# ----------------------------------------------------------------------
-if not getattr(K, "_patched_for_speed", False):
-    _orig_decay = K._decay_plants
-
-    def _fast_decay(farm, step):
-        for row in farm["tiles"]:
-            for t in row:
-                if t == "LOCKED" or t is None:
-                    continue
-                if not isinstance(t, dict) or t.get("kind") != "PLANT":
-                    continue
-                mls = t["max_lifespan_step"]
-                if mls < 0 or step < mls or (step - mls) % 2 != 0:
-                    continue
-                t["yield_units"] -= 1
-                if t["yield_units"] <= 0:
-                    # Find and replace in place
-                    for y2, r2 in enumerate(farm["tiles"]):
-                        for x2, v2 in enumerate(r2):
-                            if v2 is t:
-                                farm["tiles"][y2][x2] = {"kind": "WEED"}
-                                break
-
-    # Use original for correctness; the loop above is semantically identical
-    # but touches fewer branches on locked/empty tiles. Keep original as
-    # fallback if any edge case diverges (tests catch it).
-    K._decay_plants = _orig_decay  # keep original; patch is opt-in after validation
-    K._patched_for_speed = True
+# Speedup patch removed — kept original decay for correctness.
 
 # ----------------------------------------------------------------------
 # N-player simulator harness (extends the 2-player Simulator pattern).
