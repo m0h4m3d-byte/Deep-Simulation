@@ -8,3 +8,15 @@ replays/
 .venv/
 .vscode/
 episode-*.json
+tmp/
+evaluation_report.json
+lb.json
+lb.csv
+leaderboard.json
+team.json
+team2.txt
+team_*.txt
+ep*.txt
+extract_all.py
+replays_summary*.txt
+replays_summary.txt
