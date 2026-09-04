@@ -77,6 +77,38 @@ def _crop_season_active(crop, day):
         return is_melon_season(day)
     return True
 
+def _snake_order_for_quadrant(q: str):
+    """Snake (serpentine) order starting from shed tile of quadrant for 25 tiles."""
+    if q == "NW":
+        # Start at (4,4) shed corner, snake rows y=4->0
+        order = []
+        for idx, y in enumerate([4,3,2,1,0]):
+            xs = range(5) if idx %2==1 else range(4,-1,-1)
+            for x in xs:
+                order.append((x,y))
+        return order
+    elif q == "NE":
+        order=[]
+        for idx, y in enumerate([4,3,2,1,0]):
+            xs = list(range(5,10)) if idx%2==0 else list(range(9,4,-1))
+            for x in xs:
+                order.append((x,y))
+        return order
+    elif q == "SW":
+        order=[]
+        for idx, x in enumerate([4,3,2,1,0]):
+            ys = list(range(5,10)) if idx%2==0 else list(range(9,4,-1))
+            for y in ys:
+                order.append((x,y))
+        return order
+    return []
+
+# Precompute snake index for fast prio
+_SNAKE_INDEX = {}
+for _q in ["NW","NE","SW"]:
+    for _i, _pos in enumerate(_snake_order_for_quadrant(_q)):
+        _SNAKE_INDEX[_pos] = _i
+
 # ============================================================
 # Phase 3: Maturity Tracker
 # ============================================================
@@ -151,8 +183,9 @@ class FarmPlanner:
                              if isinstance(t, dict) and t.get("kind") == "PLANT"
                              and t.get("crop") == "MELON")
         wheat_available = shed.get("WHEAT", 0) > 0 or any(i.get("WHEAT", 0) > 0 for i in invs)
-        for y in range(10):
-            for x in range(10):
+        # Snake order for WATER/FERTILIZE/HARVEST as well: iterate tiles in snake order from shed
+        snake_tiles = sorted([(x, y) for y in range(10) for x in range(10)], key=lambda p: _SNAKE_INDEX.get(p, 99))
+        for x, y in snake_tiles:
                 if _is_final:
                     continue  # final 10 turns: skip all farm jobs, only DEPOSIT
                 t = tiles[y][x]
@@ -286,25 +319,31 @@ class FarmPlanner:
                 if crop == "MELON":
                     melon_on_field += 1
         else:
+            # Snake movement: process empty tiles in snake order per quadrant starting from shed
+            empty_snake = []
             for y in range(10):
                 for x in range(10):
                     if (x, y) in shed_tiles or tiles[y][x] == "LOCKED":
                         continue
                     if tiles[y][x] is None:
-                        if plant_count >= p_target:
-                            break
-                        for crop in crop_order:
-                            if not active.get(crop) or seeds.get(crop, 0) <= 0:
-                                continue
-                            if crop == "MELON" and melon_on_field >= melon_cap:
-                                continue
-                            if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
-                                continue
-                            jobs.append(((x, y), "PLANT", 2, crop))
-                            plant_count += 1
-                            if crop == "MELON":
-                                melon_on_field += 1
-                            break
+                        s_idx = _SNAKE_INDEX.get((x, y), 99)
+                        empty_snake.append(((x, y), s_idx))
+            empty_snake.sort(key=lambda p: p[1])
+            for (x, y), _ in empty_snake:
+                if plant_count >= p_target:
+                    break
+                for crop in crop_order:
+                    if not active.get(crop) or seeds.get(crop, 0) <= 0:
+                        continue
+                    if crop == "MELON" and melon_on_field >= melon_cap:
+                        continue
+                    if day + CROP_CONFIG[crop]["first_yield_day"] > LAST_PLAYABLE_DAY:
+                        continue
+                    jobs.append(((x, y), "PLANT", 2, crop))
+                    plant_count += 1
+                    if crop == "MELON":
+                        melon_on_field += 1
+                    break
 
         for u_idx, inv in enumerate(invs):
             depositable = [k for k, v in inv.items() if v > 0 and k not in ("WHEAT", "COW", "SHEEP", "GOOSE")]
