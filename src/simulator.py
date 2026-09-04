@@ -30,8 +30,8 @@ import time
 from kaggle_environments.envs.kaggriculture import kaggriculture as K
 
 
-# Defaults mirror kaggriculture.json exactly (note: townCenterSellInterval
-# is 24 in the engine spec, not the 12 quoted in the competition overview).
+# Defaults mirror kaggriculture.json exactly (townCenterSellInterval is 24 in
+# the engine spec as per README.md).
 DEFAULT_CONFIG = {
     "episodeSteps": 720,
     "boardSize": 10,

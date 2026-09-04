@@ -6,7 +6,7 @@
 
 - **حركة مهدورة 69.9%** (`moves 3,826` `PASS 371` `src/planner.py:530`) — `WATER 1,073` `HARVEST 321` `PLANT 222` لا تكفي لتغطية `60` مربع `10×10`، كل `move` بلا مساهمة من السبعة (`زراعة/سقي/تسميد/حصاد/إطعام/جمع سماد/ملء فراغ`) يضيع `turn`.
 - **حشائش `max 6` >2** (`THRESHOLD 15` `src/config.py:109` `src/planner.py:259`) — `weeds max 6` `seed 11` `day14-18` (`weeds 12-17` في التتبع) بدل `2` المطلوب.
-- **نباتات بلا سقي `8-9`/مباراة** (`consecutive_unwatered 1→2` `overview.txt:151`) → `WEED` وخسارة `80-900$` بذور.
+- **نباتات بلا سقي `8-9`/مباراة** (`consecutive_unwatered 1→2` `README.md:114`) → `WEED` وخسارة `80-900$` بذور.
 - **سماد `FERTILIZE 0→54`** (`prio 5→2` `STRAWBERRY` `src/planner.py:310`) — كان `0` والآن `54` لكن `market` لا يزال يبيع `FERTILIZER 43` ولا يخزن.
 - **تصفية نهاية الموسم `7 STRAWBERRY` متروكة** (`DROP 10` فقط `day29 hour14` `src/planner.py:268`) — `15 WHEAT +12 MELON` بذور في المخزن `seed 11`.
 - **سيولة `NE 1000$ day6 / SW 2000$ day9`** (`LAND_DAYS [6,9,12]` `src/config.py:15`) — لا تشترى في الوقت بسبب `money 52$` `hour1` (`seed 0` `day0 hour1`).
