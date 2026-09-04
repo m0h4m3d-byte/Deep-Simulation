@@ -141,9 +141,11 @@ class MarketEngine:
             hired = me.get("hires_today", 0)
             target = min(HIRE_TARGET, HIRE_RAMP + day)  # baseline: hands reset daily
             if hired < target:
-                # Pace hiring across the day (a few per turn) so the 10-order
-                # market cap is not exhausted on the first hour.
-                step = min(2, 10 - len(orders), 24 - hour)
+                # Need 4+farmer=5 total in turn1 (hour0) as requested — allow burst day0
+                if day == 0 and hour == 0:
+                    step = min(4, 10 - len(orders), 24 - hour)
+                else:
+                    step = min(2, 10 - len(orders), 24 - hour)
                 planned = 0
                 while hired + planned < target and planned < step:
                     cost = _fib(hired + planned)
@@ -168,8 +170,8 @@ class MarketEngine:
                 feed_cap = 4 if animals_now <= 2 else 2 if animals_now < 8 else 3
                 buy("feed", feed_cap, q * wheat_price, ["BUY_PRODUCT", "WHEAT", q], floor=0)
 
-        # Crop Dusta: WHEAT 24 MELON 10 STRAW 14 as base
-        seed_plan = {"WHEAT": (PLAN["WHEAT"], 24, 8, 0), "MELON": (PLAN["MELON"], 10, 12 if day == 0 else 6, 0),
+        # User plan: WHEAT 15 MELON 5 (2825$) — cap melon 5 day0
+        seed_plan = {"WHEAT": (15, 24, 8, 0), "MELON": (5, 10, 5 if day == 0 else 6, 0),
                      "STRAWBERRY": (PLAN["STRAWBERRY"], 14, 10, 3)}
         for crop, (target, last_day, cap, start_day) in seed_plan.items():
             if day > last_day or day < start_day:
@@ -184,7 +186,7 @@ class MarketEngine:
         # GOOSE 4d -> 25 (25+4=29), SHEEP 6d -> 23 (23+6=29), COW 8d -> 21 (21+8=29); GOOSE not bought (PLAN 0) but keep for completeness
         _ANIMAL_LAST_DAY = {"GOOSE": 25, "SHEEP": 23, "COW": 21}
         if day <= 25:  # max cutoff
-            day0_n = {"SHEEP": 2, "COW": 2}
+            day0_n = {"SHEEP": 2, "COW": 3}
             # BATCH-4/5 (P4 family): YARN-gated sheep-cap arms. Day-0-2
             # waves (exactly 4 sheep) precede the first shop draw, so
             # gating only from d3 keeps every world identical until
@@ -380,10 +382,10 @@ class MarketEngine:
         # at ~$50 avg = their single biggest revenue line). Locally the
         # price rarely drops below 40, so this is behavior-neutral in the
         # starter benchmark (shed stays ~2 units either way).
-        # BATCH-2 (P1) engine #2: when ON, the reserve becomes the working
-        # stock (collected surplus above it is still sold); OFF keeps the
-        # exact baseline reserve of 2.
-        fert_reserve = FERT_STOCK_TARGET if FERT_BUY_ENGINE_V1 else 2
+        if FERT_BUY_ENGINE_V1:
+            fert_reserve = FERT_STOCK_TARGET
+        else:
+            fert_reserve = 2
         if fert > fert_reserve:
             cap = MARKET_AWARE_CAPS["FERTILIZER"] if MARKET_AWARE_ON else 80
             sell_capped("FERTILIZER", fert - fert_reserve, cap)
