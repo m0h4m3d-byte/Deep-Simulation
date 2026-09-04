@@ -139,15 +139,21 @@ class MarketEngine:
 
         if day < 30:
             hired = me.get("hires_today", 0)
-            target = min(HIRE_TARGET, HIRE_RAMP + day)  # baseline: hands reset daily
-            if hired < target:
-                # Need 4+farmer=5 total in turn1 (hour0) as requested — allow burst day0
+            unlocked = len(me.get("unlocked_quadrants", []))
+            # Requested: 5 day0, +5 at NE, +5+1 at SW (extra worker)
+            geo_target = unlocked * 5 + (1 if unlocked == 3 else 0)
+            target = min(HIRE_TARGET + 2, geo_target)  # allow 16 total (farmer+15) if needed
+            target_hands = max(0, target - 1)
+            if hired < target_hands:
+                need = target_hands - hired
                 if day == 0 and hour == 0:
                     step = min(4, 10 - len(orders), 24 - hour)
+                elif need >= 4:
+                    step = min(5, 10 - len(orders), 24 - hour)
                 else:
                     step = min(2, 10 - len(orders), 24 - hour)
                 planned = 0
-                while hired + planned < target and planned < step:
+                while hired + planned < target_hands and planned < step:
                     cost = _fib(hired + planned)
                     if money - pending - cost < 5:
                         break
