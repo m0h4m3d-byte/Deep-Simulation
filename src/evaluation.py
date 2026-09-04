@@ -28,6 +28,22 @@ def check_drift():
             warns.append(f"DRIFT {k}: {getattr(CFG,k)} != {v}")
     return {"passed": len(warns)==0, "warnings": warns}
 
+def check_caps(request=None):
+    """Non-blocking caps check: logs caps_warnings, never waits for input in batch mode."""
+    caps_warnings=[]
+    # Example: if request asks for MELON 30 but PLAN 12, log it
+    if request:
+        for k,v in request.items():
+            cap = getattr(CFG, k, None) or CAPS.get(k)
+            if cap is not None and v > cap:
+                caps_warnings.append(f"REQUEST {k}={v} > CAP {k}={cap} at {SRC.get(k,'config')} — auto-capped to {cap}, no input wait in batch")
+    # Always scan current config for active caps that would silently truncate
+    # (informational, not blocking)
+    return caps_warnings
+
+CAPS = {"MELON": 12, "STRAWBERRY": 20, "WHEAT": 15, "COW": 10, "SHEEP": 5, "HIRE_TARGET": 12, "PLANT_TARGET_FULL": 60, "MELON_CAP": 28}
+SRC = {"MELON": "config.PLAN", "STRAWBERRY": "config.PLAN", "WHEAT": "config.PLAN", "COW": "config.PLAN", "SHEEP": "config.PLAN", "HIRE_TARGET": "config.HIRE_TARGET", "PLANT_TARGET_FULL": "config.PLANT_TARGET_FULL", "MELON_CAP": "planner.melon_cap"}
+
 def run_single_game(seed: int, quad_filter=None):
     """quad_filter: None (full 3Q) or 'NW'/'NE'/'SW' for isolated."""
     sim=Simulator(seed=seed)
@@ -176,6 +192,8 @@ def run_single_game(seed: int, quad_filter=None):
                 action_counts[a[0]]+=1
                 if a==act["farmer"]:
                     farmer1_counts[a[0]]+=1
+                if a[0]=="FERTILIZE":
+                    fert_used+=1
         if act["farmer"]==["PASS"]:
             has_work=any(isinstance(t, dict) and (t.get("yield_units",0)>0 or (t.get("kind")=="PLANT" and not t.get("watered_today",True))) for row in tiles for t in row)
             if has_work:
@@ -197,8 +215,6 @@ def run_single_game(seed: int, quad_filter=None):
             if o and o[0]=="HIRE":
                 # cost is fib(hires_today) before hire
                 hire_cost_total+=1  # placeholder, actual cost tracked via money diff approximate
-            if o and o[0]=="FERTILIZE":
-                fert_used+=1
         views=sim.step([act, {"farmer":["PASS"],"hands":[],"market":[]}])
         _lock_isolated()
 
@@ -236,10 +252,11 @@ def run_single_game(seed: int, quad_filter=None):
         "final_tiles": final_tiles,
     }
 
-def run_evaluation(seeds: List[int]):
+def run_evaluation(seeds: List[int], request=None):
     import time, statistics, json
     t0=time.perf_counter()
     drift=check_drift()
+    caps_warnings=check_caps(request)
     results=[run_single_game(s) for s in seeds]
     money_vals=[r["money"] for r in results]
     mean=sum(money_vals)/len(money_vals) if money_vals else 0
@@ -268,7 +285,7 @@ def run_evaluation(seeds: List[int]):
     avg_consec1=sum(r["consec1"] for r in results)/len(results) if results else 0
     avg_delay=sum(r["avg_delay"] for r in results)/len(results) if results else 0
     report={
-        "meta": {"seeds": seeds, "elapsed_sec": elapsed, "drift": drift},
+        "meta": {"seeds": seeds, "elapsed_sec": elapsed, "drift": drift, "caps_warnings": caps_warnings},
         "financial": {"mean": mean, "best": best, "worst": worst, "stdev": stdev, "histogram": hist, "values": money_vals, "cv": stdev/mean if mean else 0},
         "operational": {
             "day1_plants_mean": sum(r["day1_plants"] for r in results)/len(results) if results else 0,

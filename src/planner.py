@@ -106,11 +106,17 @@ class FarmPlanner:
     def reset(self):
         self.day = 0
         self.unit_task = {}
+        self.fert_today = 0
+        self.fert_day = -1
+        self._hour = 0
 
     def on_day(self, day: int):
         if day != self.day:
             self.day = day
             self.unit_task = {}
+        if self.fert_day != day:
+            self.fert_day = day
+            self.fert_today = 0
 
     @staticmethod
     def _count_structs(tiles, kind: str) -> int:
@@ -127,6 +133,7 @@ class FarmPlanner:
         """Build the priority-sorted job queue. Mirrors Agent._collect_jobs."""
         jobs = []
         _hour = market_ctx.get("hour", 0) if market_ctx else 0
+        self._hour = _hour
         _is_final = (day == 29 and _hour >= 14)  # Crop Dusta: last 10 only
         # count weeds up front (handles dict kind==WEED and string "WEED")
         _weed_count = 0
@@ -303,11 +310,20 @@ class FarmPlanner:
             depositable = [k for k, v in inv.items() if v > 0 and k not in ("WHEAT", "COW", "SHEEP", "GOOSE")]
             if inv.get("WHEAT", 0) > 6:
                 depositable.append("WHEAT")
+            # Multi-inventory: use DROP when >=2 types and capacity safe (avoid overflow near 100)
+            distinct_harvest = [k for k,v in inv.items() if v>0 and k not in ("WHEAT","COW","SHEEP","GOOSE")]
+            shed_load = sum(shed.values())
+            inv_load = sum(v for k,v in inv.items() if k not in ("WHEAT","COW","SHEEP","GOOSE"))
+            use_drop = len(distinct_harvest) >= 2 and (shed_load + inv_load) <= 85
             # Final 10 turns: dump everything via DROP
             if _is_final and any(v > 0 for v in inv.values()):
                 # use DROP priority -1 to outrank everything and empty whole inventory at once
                 near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
                 jobs.append((near, "DEPOSIT", -1, "__DROP_ALL__", u_idx))
+            elif use_drop and any(v > 0 for v in inv.values()):
+                near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
+                # DROP for multi-type: capacity safe, faster than sequential PLACE
+                jobs.append((near, "DEPOSIT", 2, "__DROP_ALL__", u_idx))
             elif depositable:
                 near = min(SHED_TILES, key=lambda s: abs(s[0]) + abs(s[1]))
                 dep_prio = -1 if _is_final else 2
@@ -328,6 +344,14 @@ class FarmPlanner:
                 continue
             if j[1] == "FEED" and inv.get("WHEAT", 0) <= 0 and shed.get("WHEAT", 0) <= 0:
                 continue
+            if j[1] == "PLACE" and len(j) > 3 and inv.get(j[3], 0) <= 0 and shed.get(j[3], 0) <= 0:
+                continue
+            if j[1] == "FERTILIZE" and inv.get("FERTILIZER", 0) <= 0 and shed.get("FERTILIZER", 0) <= 0:
+                continue
+            # Dedicated workers: day<=2, only farmer (0) + hand0 (1) handle FEED/CARE/BUILD/PLACE/COLLECT
+            # others (u_idx>=2) skip those to go straight to PLANT (max 10 steps for animal crew)
+            if self.day <= 2 and u_idx >= 2 and j[1] in ("FEED", "CARE", "COLLECT_FERTILIZER", "BUILD_PASTURE", "BUILD_COOP", "PLACE"):
+                continue
             prio = j[2]
             if j[0] == task_tile:
                 prio -= 100
@@ -346,6 +370,27 @@ class FarmPlanner:
                 pick = j
                 pick_prio = prio
         if pick is None:
+            # Fallback: instead of PASS when jobs exist but all taken/filtered, step toward nearest job (even if taken) to reduce waste
+            if jobs:
+                # find nearest job ignoring used_jobs but respecting inv feasibility
+                best = None
+                best_dist = None
+                for j in jobs:
+                    if j[1] == "DEPOSIT" and len(j) > 4 and j[4] != u_idx:
+                        continue
+                    if j[1] == "FEED" and inv.get("WHEAT", 0) <= 0 and shed.get("WHEAT", 0) <= 0:
+                        continue
+                    if j[1] == "PLACE" and len(j) > 3 and inv.get(j[3], 0) <= 0 and shed.get(j[3], 0) <= 0:
+                        continue
+                    if j[1] == "FERTILIZE" and inv.get("FERTILIZER", 0) <= 0 and shed.get("FERTILIZER", 0) <= 0:
+                        continue
+                    # allow even if in used_jobs for movement
+                    dist = abs(j[0][0] - pos[0]) + abs(j[0][1] - pos[1])
+                    if best is None or dist < best_dist:
+                        best = j
+                        best_dist = dist
+                if best is not None:
+                    return self._step(pos, best[0])
             return ["PASS"]
         target, op = pick[0], pick[1]
         if op == "DEPOSIT":
